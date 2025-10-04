@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react"
 import { SolarSystem } from "@/components/solar-system"
 import { ControlPanel } from "@/components/control-panel"
+import { PlanetSelector } from "@/components/planet-selector"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Rocket, Settings, Info, AlertTriangle, Target } from "lucide-react"
@@ -25,6 +26,7 @@ export default function HomePage() {
     timeToImpact: number | null
   } | null>(null)
   const [asteroidSpawnCounter, setAsteroidSpawnCounter] = useState(0)
+  const [focusedPlanet, setFocusedPlanet] = useState<string | null>(null)
 
   const handleStartSimulation = () => {
     setSimulationActive(true)
@@ -134,6 +136,8 @@ export default function HomePage() {
             onMeteorPlaced={handleMeteorPlaced}
             isPaused={isPaused}
             onSpawnAsteroid={handleSpawnAsteroid}
+            asteroidSpawnCounter={asteroidSpawnCounter}
+            focusPlanet={focusedPlanet}
           />
         </div>
 
@@ -154,6 +158,12 @@ export default function HomePage() {
             startPosition={startPosition}
             onStartPositionChange={setStartPosition}
             onSpawnAsteroid={handleSpawnAsteroid}
+          />
+
+          {/* Planet Focus Selector with GSAP Camera Animation */}
+          <PlanetSelector
+            selectedPlanet={focusedPlanet}
+            onSelectPlanet={setFocusedPlanet}
           />
 
           {meteorData && (

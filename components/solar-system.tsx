@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
+import gsap from "gsap"
 
 interface SolarSystemProps {
   onPlanetHover?: (planet: string | null) => void
@@ -23,6 +24,8 @@ interface SolarSystemProps {
   }) => void
   isPaused?: boolean
   onSpawnAsteroid?: () => void
+  asteroidSpawnCounter?: number
+  focusPlanet?: string | null  // New: planet to focus camera on
 }
 
 interface Asteroid {
@@ -42,6 +45,8 @@ export function SolarSystem({
   onMeteorPlaced,
   isPaused = false,
   onSpawnAsteroid,
+  asteroidSpawnCounter = 0,
+  focusPlanet = null,
 }: SolarSystemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -52,6 +57,16 @@ export function SolarSystem({
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2())
   const lastAsteroidConfigRef = useRef<string>("")
   const controlsRef = useRef<OrbitControls | null>(null)
+  const [webglError, setWebglError] = useState<string | null>(null)
+  const planetsRef = useRef<Array<{
+    mesh: THREE.Mesh
+    orbit: THREE.Line
+    angle: number
+    meanAngularVelocity: number
+    distance: number
+    eccentricity: number
+    name: string
+  }>>([])
 
   const G = 0.5
   const sunMass = 1000
@@ -80,7 +95,31 @@ export function SolarSystem({
     camera.position.set(0, 50, 100)
     cameraRef.current = camera
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    // WebGL context creation with error handling
+    let renderer: THREE.WebGLRenderer
+    try {
+      renderer = new THREE.WebGLRenderer({ 
+        antialias: true, 
+        alpha: true,
+        failIfMajorPerformanceCaveat: false // Allow fallback to software rendering
+      })
+      
+      // Test if WebGL is actually working
+      const gl = renderer.getContext()
+      if (!gl) {
+        throw new Error('WebGL context could not be created')
+      }
+      
+    } catch (error) {
+      console.error('WebGL Error:', error)
+      setWebglError(
+        'Your browser or device does not support WebGL, which is required for 3D graphics. ' +
+        'Please try: 1) Updating your browser, 2) Enabling hardware acceleration in browser settings, ' +
+        '3) Updating your graphics drivers, or 4) Using a different browser (Chrome, Firefox, Edge).'
+      )
+      return
+    }
+
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
@@ -88,7 +127,16 @@ export function SolarSystem({
     renderer.outputColorSpace = THREE.SRGBColorSpace // Better color accuracy
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.0
-    containerRef.current.appendChild(renderer.domElement)
+    
+    try {
+      containerRef.current.appendChild(renderer.domElement)
+    } catch (error) {
+      console.error('Failed to append renderer:', error)
+      setWebglError('Failed to initialize 3D viewer. Please refresh the page.')
+      renderer.dispose()
+      return
+    }
+    
     rendererRef.current = renderer
 
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -222,7 +270,7 @@ export function SolarSystem({
       mesh: THREE.Mesh
       orbit: THREE.Line
       angle: number
-      meanAngularVelocity: number  // Kepler's 3rd Law: derived from orbital period
+      meanAngularVelocity: number
       distance: number
       eccentricity: number
       name: string
@@ -382,6 +430,9 @@ export function SolarSystem({
       })
     })
 
+    // Store planets in ref for camera animations
+    planetsRef.current = planets
+
     let lastTime = performance.now()
     const animate = () => {
       requestAnimationFrame(animate)
@@ -520,8 +571,69 @@ export function SolarSystem({
       }
       controlsRef.current?.dispose()
       rendererRef.current?.dispose()
+      // Kill any active GSAP animations
+      if (cameraRef.current?.position) {
+        gsap.killTweensOf(cameraRef.current.position)
+      }
+      if (controlsRef.current?.target) {
+        gsap.killTweensOf(controlsRef.current.target)
+      }
     }
   }, []) // Empty dependency array - scene setup only runs once
+
+  // GSAP Camera Animation - Smooth fly-to effect when focusing on planets
+  useEffect(() => {
+    if (!cameraRef.current || !controlsRef.current || !focusPlanet) return
+
+    const planet = planetsRef.current.find(p => p.name === focusPlanet)
+    if (!planet) return
+
+    // Calculate optimal camera position (behind and above the planet)
+    const planetPos = planet.mesh.position
+    const planetSize = (planet.mesh.geometry as THREE.SphereGeometry).parameters.radius
+    const distance = planetSize * 5 // Distance multiplier for good viewing angle
+
+    // Camera target: slightly in front of planet in its orbital direction
+    const targetPos = new THREE.Vector3(planetPos.x, planetPos.y, planetPos.z)
+
+    // Camera position: behind and above
+    const angle = planet.angle - Math.PI / 4 // Behind the planet
+    const cameraPos = new THREE.Vector3(
+      planetPos.x + Math.cos(angle) * distance,
+      planetPos.y + distance * 0.7, // Elevated view
+      planetPos.z + Math.sin(angle) * distance
+    )
+
+    // Kill any existing animations
+    gsap.killTweensOf(cameraRef.current.position)
+    gsap.killTweensOf(controlsRef.current.target)
+
+    // Smooth camera movement using GSAP with easing
+    const duration = 2 // 2 seconds for cinematic feel
+
+    gsap.to(cameraRef.current.position, {
+      x: cameraPos.x,
+      y: cameraPos.y,
+      z: cameraPos.z,
+      duration: duration,
+      ease: "power2.inOut", // Smooth acceleration and deceleration
+      onUpdate: () => {
+        cameraRef.current?.updateProjectionMatrix()
+      }
+    })
+
+    gsap.to(controlsRef.current.target, {
+      x: targetPos.x,
+      y: targetPos.y,
+      z: targetPos.z,
+      duration: duration,
+      ease: "power2.inOut",
+      onUpdate: () => {
+        controlsRef.current?.update()
+      }
+    })
+
+  }, [focusPlanet])
 
   useEffect(() => {
     if (!asteroidConfig?.active || !sceneRef.current) return
@@ -627,18 +739,67 @@ export function SolarSystem({
         asteroidId,
       })
     }
-  }, [asteroidConfig, onMeteorPlaced]) // Only depends on asteroidConfig and onMeteorPlaced
+  }, [asteroidSpawnCounter]) // Only spawn when counter changes
 
   return (
     <div className="relative w-full h-full">
-      <div ref={containerRef} className="w-full h-full" />
-      <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm border border-border/50 rounded-lg px-4 py-2 text-sm text-muted-foreground">
-        <div className="font-medium mb-1">Interactive Controls:</div>
-        <div>• Scroll to zoom (wide range)</div>
-        <div>• Drag to rotate view</div>
-        <div>• {isPaused ? "Simulation Paused" : "Simulation Running"}</div>
-        <div>• Active Asteroids: {asteroidsRef.current.length}</div>
-      </div>
+      {webglError ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+          <div className="max-w-md p-8 bg-card border border-border rounded-lg shadow-lg">
+            <div className="flex items-start gap-3 mb-4">
+              <svg 
+                className="w-6 h-6 text-destructive flex-shrink-0 mt-1" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" 
+                />
+              </svg>
+              <div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">WebGL Not Available</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {webglError}
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 space-y-2 text-xs text-muted-foreground">
+              <p className="font-semibold">Common solutions:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Enable hardware acceleration in your browser</li>
+                <li>Update your graphics drivers</li>
+                <li>Try a different browser (Chrome, Firefox, Edge)</li>
+                <li>Check if WebGL is blocked by browser extensions</li>
+              </ul>
+              <div className="mt-4 pt-4 border-t border-border">
+                <a 
+                  href="https://get.webgl.org/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Test WebGL support →
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div ref={containerRef} className="w-full h-full" />
+          <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm border border-border/50 rounded-lg px-4 py-2 text-sm text-muted-foreground">
+            <div className="font-medium mb-1">Interactive Controls:</div>
+            <div>• Scroll to zoom (wide range)</div>
+            <div>• Drag to rotate view</div>
+            <div>• {isPaused ? "Simulation Paused" : "Simulation Running"}</div>
+            <div>• Active Asteroids: {asteroidsRef.current.length}</div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
