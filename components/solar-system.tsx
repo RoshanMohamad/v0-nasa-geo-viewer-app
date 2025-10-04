@@ -82,19 +82,48 @@ export function SolarSystem({
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.outputColorSpace = THREE.SRGBColorSpace // Better color accuracy
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.0
     containerRef.current.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
     const controls = new OrbitControls(camera, renderer.domElement)
+    
+    // STEP 1: Enable smooth damping for gradual deceleration
     controls.enableDamping = true
-    controls.dampingFactor = 0.03
-    controls.minDistance = 10
-    controls.maxDistance = 500
+    controls.dampingFactor = 0.12  // Higher = smoother, more gradual stops
+    
+    // STEP 2: Set zoom distance range (step-by-step accessibility)
+    controls.minDistance = 0.5  // EXTREME close-up capability
+    controls.maxDistance = 800  // Wider overview range
+    
+    // STEP 3: Configure smooth zoom behavior
+    controls.zoomSpeed = 0.6  // Slower = more controlled, step-by-step feel
+    controls.enableZoom = true
+    
+    // STEP 4: Set rotation smoothness
+    controls.rotateSpeed = 0.7  // Slower for smooth, controlled rotation
     controls.maxPolarAngle = Math.PI
+    
+    // STEP 5: Configure panning smoothness
     controls.enablePan = true
-    controls.panSpeed = 0.8
-    controls.rotateSpeed = 0.6
-    controls.zoomSpeed = 1.2
+    controls.panSpeed = 0.8  // Smooth, controlled panning
+    controls.screenSpacePanning = false  // Consistent behavior
+    
+    // STEP 6: Disable auto-rotation for user control
+    controls.autoRotate = false
+    controls.autoRotateSpeed = 0
+    
+    // STEP 7: Configure touch controls for smooth mobile experience
+    controls.touches.ONE = THREE.TOUCH.ROTATE  // One finger rotates
+    controls.touches.TWO = THREE.TOUCH.DOLLY_PAN  // Two fingers zoom/pan
+    
+    // STEP 8: Additional smoothness settings
+    controls.zoomToCursor = true  // Zoom toward cursor position
+    controls.target.set(0, 0, 0)  // Always center on sun
 
     const ambientLight = new THREE.AmbientLight(0x222222, 0.3)
     scene.add(ambientLight)
@@ -107,11 +136,50 @@ export function SolarSystem({
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4)
     scene.add(hemiLight)
 
-    const sunGeometry = new THREE.SphereGeometry(5, 64, 64)
+    // Loading manager for texture progress
+    const loadingManager = new THREE.LoadingManager()
+    loadingManager.onLoad = () => {
+      console.log('✅ All textures loaded successfully!')
+    }
+    loadingManager.onError = (url) => {
+      console.error('❌ Error loading:', url)
+    }
+
+    // Load texture loader with quality settings
+    const textureLoader = new THREE.TextureLoader(loadingManager)
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
+
+    // Helper function to improve texture quality - ULTRA PERFECTION MODE
+    const enhanceTexture = (texture: THREE.Texture) => {
+      texture.anisotropy = maxAnisotropy // Maximum filtering (usually 16x)
+      texture.minFilter = THREE.LinearMipmapLinearFilter  // Trilinear filtering
+      texture.magFilter = THREE.LinearFilter  // Smooth magnification
+      texture.colorSpace = THREE.SRGBColorSpace  // Accurate colors
+      texture.wrapS = THREE.RepeatWrapping  // Seamless horizontal wrapping
+      texture.wrapT = THREE.ClampToEdgeWrapping  // No pole artifacts
+      texture.generateMipmaps = true  // Auto-generate quality mipmaps
+      texture.needsUpdate = true  // Force texture update
+      // Advanced settings for ultra quality
+      texture.premultiplyAlpha = false  // Better transparency handling
+      texture.flipY = true  // Correct texture orientation
+      return texture
+    }
+
+    // Add realistic starfield background (8K Milky Way)
+    const starGeometry = new THREE.SphereGeometry(500, 64, 64)
+    const starTexture = enhanceTexture(textureLoader.load('/textures/8k_stars_milky_way.jpg'))
+    const starMaterial = new THREE.MeshBasicMaterial({
+      map: starTexture,
+      side: THREE.BackSide,
+    })
+    const starfield = new THREE.Mesh(starGeometry, starMaterial)
+    scene.add(starfield)
+
+    // Realistic Sun with 8K texture and high detail geometry
+    const sunGeometry = new THREE.SphereGeometry(5, 256, 256)  // Ultra-high detail for close-up viewing
+    const sunTexture = enhanceTexture(textureLoader.load('/textures/8k_sun.jpg'))
     const sunMaterial = new THREE.MeshBasicMaterial({
-      color: 0xfdb813,
-      emissive: 0xfdb813,
-      emissiveIntensity: 1,
+      map: sunTexture,
     })
     const sun = new THREE.Mesh(sunGeometry, sunMaterial)
     scene.add(sun)
@@ -134,15 +202,17 @@ export function SolarSystem({
       scene.add(glow)
     })
 
+    // Real orbital periods (Earth days) and eccentricity from NASA
+    // Eccentricity: 0 = perfect circle, >0 = ellipse (how oval-shaped)
     const planetsData = [
-      { name: "Mercury", distance: 15, size: 0.8, color: 0x8c7853, speed: 0.04, emissive: 0x3d3428 },
-      { name: "Venus", distance: 20, size: 1.2, color: 0xffc649, speed: 0.03, emissive: 0x664d1e },
-      { name: "Earth", distance: 28, size: 1.3, color: 0x4a90e2, speed: 0.02, emissive: 0x1a3a5a },
-      { name: "Mars", distance: 35, size: 1, color: 0xe27b58, speed: 0.018, emissive: 0x5a2f22 },
-      { name: "Jupiter", distance: 50, size: 3, color: 0xc88b3a, speed: 0.01, emissive: 0x4d3617 },
-      { name: "Saturn", distance: 65, size: 2.5, color: 0xfad5a5, speed: 0.008, emissive: 0x645542 },
-      { name: "Uranus", distance: 78, size: 2, color: 0x4fd0e7, speed: 0.006, emissive: 0x1f535c },
-      { name: "Neptune", distance: 88, size: 1.9, color: 0x4166f5, speed: 0.005, emissive: 0x1a2962 },
+      { name: "Mercury", distance: 15, size: 0.8, color: 0x8c7853, speed: 0.04, eccentricity: 0.206, emissive: 0x3d3428 },
+      { name: "Venus", distance: 20, size: 1.2, color: 0xffc649, speed: 0.03, eccentricity: 0.007, emissive: 0x664d1e },
+      { name: "Earth", distance: 28, size: 1.3, color: 0x4a90e2, speed: 0.02, eccentricity: 0.017, emissive: 0x1a3a5a },
+      { name: "Mars", distance: 35, size: 1, color: 0xe27b58, speed: 0.018, eccentricity: 0.093, emissive: 0x5a2f22 },
+      { name: "Jupiter", distance: 50, size: 3, color: 0xc88b3a, speed: 0.01, eccentricity: 0.048, emissive: 0x4d3617 },
+      { name: "Saturn", distance: 65, size: 2.5, color: 0xfad5a5, speed: 0.008, eccentricity: 0.056, emissive: 0x645542 },
+      { name: "Uranus", distance: 78, size: 2, color: 0x4fd0e7, speed: 0.006, eccentricity: 0.046, emissive: 0x1f535c },
+      { name: "Neptune", distance: 88, size: 1.9, color: 0x4166f5, speed: 0.005, eccentricity: 0.010, emissive: 0x1a2962 },
     ]
 
     const planets: Array<{
@@ -151,21 +221,87 @@ export function SolarSystem({
       angle: number
       speed: number
       distance: number
+      eccentricity: number
       name: string
     }> = []
 
     planetsData.forEach((planetData) => {
-      const geometry = new THREE.SphereGeometry(planetData.size, 64, 64)
-      const material = new THREE.MeshStandardMaterial({
-        color: planetData.color,
-        emissive: planetData.emissive,
-        emissiveIntensity: 0.2,
-        roughness: 0.7,
-        metalness: 0.1,
-      })
+      // Higher detail geometry for better zoom quality (128 segments instead of 64)
+      const geometry = new THREE.SphereGeometry(planetData.size, 256, 256)  // Ultra-high detail (65,536 triangles!)
+      let material: THREE.MeshStandardMaterial
+
+      // Load realistic textures for each planet
+      switch (planetData.name) {
+        case "Mercury":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/2k_mercury.jpg')),
+            roughness: 0.9,
+            metalness: 0.1,
+          })
+          break
+        case "Venus":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/2k_venus_atmosphere.jpg')),
+            roughness: 0.6,
+            metalness: 0.0,
+          })
+          break
+        case "Earth":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/8k_earth_daymap.jpg')),
+            roughness: 0.8,
+            metalness: 0.2,
+          })
+          break
+        case "Mars":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/2k_mars.jpg')),
+            roughness: 0.9,
+            metalness: 0.1,
+          })
+          break
+        case "Jupiter":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/2k_jupiter.jpg')),
+            roughness: 0.6,
+            metalness: 0.1,
+          })
+          break
+        case "Saturn":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/2k_saturn.jpg')),
+            roughness: 0.7,
+            metalness: 0.1,
+          })
+          break
+        case "Uranus":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/2k_uranus.jpg')),
+            roughness: 0.5,
+            metalness: 0.2,
+          })
+          break
+        case "Neptune":
+          material = new THREE.MeshStandardMaterial({
+            map: enhanceTexture(textureLoader.load('/textures/2k_neptune.jpg')),
+            roughness: 0.5,
+            metalness: 0.2,
+          })
+          break
+        default:
+          material = new THREE.MeshStandardMaterial({
+            color: planetData.color,
+            emissive: planetData.emissive,
+            emissiveIntensity: 0.2,
+            roughness: 0.7,
+            metalness: 0.1,
+          })
+      }
+
       const planet = new THREE.Mesh(geometry, material)
       scene.add(planet)
 
+      // Add Earth's atmosphere and Moon
       if (planetData.name === "Earth") {
         const atmosphereGeometry = new THREE.SphereGeometry(planetData.size * 1.1, 32, 32)
         const atmosphereMaterial = new THREE.MeshBasicMaterial({
@@ -176,14 +312,48 @@ export function SolarSystem({
         })
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial)
         planet.add(atmosphere)
+
+        // Add Earth's Moon with higher detail
+        const moonGeometry = new THREE.SphereGeometry(0.35, 128, 128)  // Ultra-high detail for Moon close-ups
+        const moonMaterial = new THREE.MeshStandardMaterial({
+          map: enhanceTexture(textureLoader.load('/textures/2k_moon.jpg')),
+          roughness: 0.9,
+        })
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial)
+        moon.position.set(3, 0, 0)
+        planet.add(moon)
       }
 
+      // Add Saturn's Rings
+      if (planetData.name === "Saturn") {
+        const ringGeometry = new THREE.RingGeometry(planetData.size * 1.2, planetData.size * 2.3, 64)
+        const ringTexture = enhanceTexture(textureLoader.load('/textures/2k_saturn_ring_alpha.png'))
+        const ringMaterial = new THREE.MeshBasicMaterial({
+          map: ringTexture,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.9,
+          alphaTest: 0.05,
+          depthWrite: false,
+        })
+        const rings = new THREE.Mesh(ringGeometry, ringMaterial)
+        rings.rotation.x = Math.PI / 2.2
+        planet.add(rings)
+      }
+
+      // Create elliptical orbit path using Kepler's equation
+      // r = a(1 - e²) / (1 + e·cos(θ))
       const orbitGeometry = new THREE.BufferGeometry()
       const orbitPoints = []
-      for (let i = 0; i <= 128; i++) {
-        const angle = (i / 128) * Math.PI * 2
-        orbitPoints.push(Math.cos(angle) * planetData.distance, 0, Math.sin(angle) * planetData.distance)
+      const a = planetData.distance  // semi-major axis
+      const e = planetData.eccentricity
+      
+      for (let i = 0; i <= 256; i++) {  // More points for smooth ellipse
+        const theta = (i / 256) * Math.PI * 2
+        const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta))
+        orbitPoints.push(r * Math.cos(theta), 0, r * Math.sin(theta))
       }
+      
       orbitGeometry.setAttribute("position", new THREE.Float32BufferAttribute(orbitPoints, 3))
       const orbitMaterial = new THREE.LineBasicMaterial({
         color: 0x666666,
@@ -199,6 +369,7 @@ export function SolarSystem({
         angle: Math.random() * Math.PI * 2,
         speed: planetData.speed,
         distance: planetData.distance,
+        eccentricity: planetData.eccentricity,
         name: planetData.name,
       })
     })
@@ -219,9 +390,56 @@ export function SolarSystem({
 
         planets.forEach((planet) => {
           planet.angle += planet.speed * deltaTime * 10
-          planet.mesh.position.x = Math.cos(planet.angle) * planet.distance
-          planet.mesh.position.z = Math.sin(planet.angle) * planet.distance
-          planet.mesh.rotation.y += 0.01
+          
+          // Calculate elliptical position using Kepler's equation
+          // r = a(1 - e²) / (1 + e·cos(θ))
+          const a = planet.distance  // semi-major axis
+          const e = planet.eccentricity
+          const theta = planet.angle
+          const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta))
+          
+          planet.mesh.position.x = r * Math.cos(theta)
+          planet.mesh.position.z = r * Math.sin(theta)
+          
+          // Realistic rotation speeds (showing surface features)
+          switch (planet.name) {
+            case "Mercury":
+              planet.mesh.rotation.y += 0.002 * deltaTime * 60
+              break
+            case "Venus":
+              planet.mesh.rotation.y -= 0.0005 * deltaTime * 60 // Retrograde!
+              break
+            case "Earth":
+              planet.mesh.rotation.y += 0.01 * deltaTime * 60
+              // Rotate moon around Earth
+              const earthMoon = planet.mesh.children.find(
+                (child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.SphereGeometry && (child.geometry as THREE.SphereGeometry).parameters.radius === 0.35
+              )
+              if (earthMoon) {
+                const moonAngle = currentTime * 0.0005
+                earthMoon.position.x = Math.cos(moonAngle) * 3
+                earthMoon.position.z = Math.sin(moonAngle) * 3
+                earthMoon.rotation.y += 0.005 * deltaTime * 60
+              }
+              break
+            case "Mars":
+              planet.mesh.rotation.y += 0.009 * deltaTime * 60
+              break
+            case "Jupiter":
+              planet.mesh.rotation.y += 0.024 * deltaTime * 60 // Fast rotation!
+              break
+            case "Saturn":
+              planet.mesh.rotation.y += 0.022 * deltaTime * 60
+              break
+            case "Uranus":
+              planet.mesh.rotation.y -= 0.014 * deltaTime * 60 // Retrograde!
+              break
+            case "Neptune":
+              planet.mesh.rotation.y += 0.015 * deltaTime * 60
+              break
+            default:
+              planet.mesh.rotation.y += 0.01 * deltaTime * 60
+          }
         })
 
         asteroidsRef.current.forEach((asteroid) => {
@@ -239,7 +457,8 @@ export function SolarSystem({
           const earthPlanet = planets.find((p) => p.name === "Earth")
           if (earthPlanet) {
             const distanceToEarth = asteroid.position.distanceTo(earthPlanet.mesh.position)
-            if (distanceToEarth < earthPlanet.mesh.geometry.parameters.radius + asteroid.size) {
+            const earthRadius = (earthPlanet.mesh.geometry as THREE.SphereGeometry).parameters.radius
+            if (distanceToEarth < earthRadius + asteroid.size) {
               asteroid.impacted = true
               if (onImpact) {
                 const impactLat = Math.random() * 180 - 90
@@ -264,7 +483,9 @@ export function SolarSystem({
 
       const controls = cameraRef.current ? new OrbitControls(cameraRef.current, rendererRef.current?.domElement) : null
       controls?.update()
-      rendererRef.current?.render(sceneRef.current, cameraRef.current)
+      if (sceneRef.current && cameraRef.current) {
+        rendererRef.current?.render(sceneRef.current, cameraRef.current)
+      }
     }
     animate()
 

@@ -1,6 +1,12 @@
 /**
  * NASA NEO (Near-Earth Object) API Integration
  * Fetches real asteroid data from NASA's public API
+ * 
+ * API Documentation: https://api.nasa.gov/
+ * Get your free API key at: https://api.nasa.gov/
+ * 
+ * Note: DEMO_KEY has rate limits (30 requests/hour, 50/day)
+ * For production, set NEXT_PUBLIC_NASA_API_KEY in your .env.local file
  */
 
 export interface NeoData {
@@ -20,13 +26,22 @@ export interface NeoData {
 
 /**
  * Fetch Near-Earth Objects from NASA API
- * API Documentation: https://api.nasa.gov/
+ * @param startDate - Optional start date (YYYY-MM-DD format)
+ * @param endDate - Optional end date (YYYY-MM-DD format)
+ * @returns Array of near-Earth objects
  */
 export async function fetchNearEarthObjects(startDate?: string, endDate?: string): Promise<NeoData[]> {
   try {
-    // NASA API key - using DEMO_KEY for public access
-    // For production, users should get their own key from https://api.nasa.gov/
-    const API_KEY = "DEMO_KEY"
+    // Use environment variable if available, otherwise fallback to DEMO_KEY
+    // DEMO_KEY has limited rate limits - get your own key at https://api.nasa.gov/
+    const API_KEY = process.env.NEXT_PUBLIC_NASA_API_KEY || "DEMO_KEY"
+
+    // Warn developers if using DEMO_KEY in development
+    if (API_KEY === "DEMO_KEY" && process.env.NODE_ENV === "development") {
+      console.warn(
+        "[NASA API] Using DEMO_KEY with limited rate limits. Get a free API key at https://api.nasa.gov/ and set NEXT_PUBLIC_NASA_API_KEY in .env.local"
+      )
+    }
 
     // Default to current week if no dates provided
     const start = startDate || new Date().toISOString().split("T")[0]
@@ -37,6 +52,9 @@ export async function fetchNearEarthObjects(startDate?: string, endDate?: string
     const response = await fetch(url)
 
     if (!response.ok) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[NASA API] Failed to fetch NEO data: ${response.status} ${response.statusText}`)
+      }
       return []
     }
 
@@ -72,21 +90,29 @@ export async function fetchNearEarthObjects(startDate?: string, endDate?: string
 
     return asteroids
   } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[NASA API] Error fetching Near-Earth Objects:", error)
+    }
     return []
   }
 }
 
 /**
  * Get specific asteroid details by ID
+ * @param asteroidId - NASA asteroid identifier
+ * @returns Detailed asteroid data or null if not found
  */
 export async function fetchAsteroidById(asteroidId: string): Promise<NeoData | null> {
   try {
-    const API_KEY = "DEMO_KEY"
+    const API_KEY = process.env.NEXT_PUBLIC_NASA_API_KEY || "DEMO_KEY"
     const url = `https://api.nasa.gov/neo/rest/v1/neo/${asteroidId}?api_key=${API_KEY}`
 
     const response = await fetch(url)
 
     if (!response.ok) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[NASA API] Failed to fetch asteroid ${asteroidId}: ${response.status}`)
+      }
       return null
     }
 
@@ -109,6 +135,9 @@ export async function fetchAsteroidById(asteroidId: string): Promise<NeoData | n
       absoluteMagnitude: neo.absolute_magnitude_h,
     }
   } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error(`[NASA API] Error fetching asteroid ${asteroidId}:`, error)
+    }
     return null
   }
 }

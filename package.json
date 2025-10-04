@@ -1,12 +1,14 @@
 {
-  "name": "my-v0-project",
+  "name": "nasa-geo-viewer-app",
   "version": "0.1.0",
   "private": true,
+  "description": "Interactive Solar System & Asteroid Impact Simulator with real NASA data",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start"
+    "start": "next start",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -67,6 +69,7 @@
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/three": "^0.169.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",

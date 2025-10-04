@@ -1,6 +1,14 @@
 /**
  * Impact Calculation Engine
  * Based on real asteroid impact physics and formulas
+ * 
+ * This module provides scientifically accurate calculations for asteroid impacts,
+ * including energy release, crater formation, and damage assessment.
+ * 
+ * References:
+ * - Collins et al. (2005) - Earth Impact Effects Program
+ * - Holsapple & Housen (2007) - Crater scaling laws
+ * - Glasstone & Dolan (1977) - Effects of Nuclear Weapons (for blast calculations)
  */
 
 export interface AsteroidData {
@@ -30,7 +38,10 @@ export interface ImpactResults {
 }
 
 /**
- * Calculate asteroid mass in kg
+ * Calculate asteroid mass in kilograms
+ * @param diameter - Asteroid diameter in kilometers
+ * @param density - Material density in kg/m³ (typical rocky asteroid: 2600 kg/m³)
+ * @returns Mass in kilograms
  */
 function calculateMass(diameter: number, density: number): number {
   const radius = (diameter * 1000) / 2 // convert km to meters
@@ -39,7 +50,10 @@ function calculateMass(diameter: number, density: number): number {
 }
 
 /**
- * Calculate kinetic energy
+ * Calculate kinetic energy using classical mechanics (KE = ½mv²)
+ * @param mass - Mass in kilograms
+ * @param velocity - Velocity in km/s
+ * @returns Kinetic energy in joules
  */
 function calculateKineticEnergy(mass: number, velocity: number): number {
   const velocityMS = velocity * 1000 // convert km/s to m/s
@@ -128,6 +142,16 @@ function getSeverity(energyMT: number): "minor" | "moderate" | "severe" | "catas
 
 /**
  * Main impact calculation function
+ * 
+ * Calculates comprehensive impact effects including:
+ * - Kinetic energy release
+ * - Crater dimensions
+ * - Damage radii (airblast, thermal, seismic)
+ * - Historical comparison
+ * - Severity classification
+ * 
+ * @param asteroid - Asteroid parameters (diameter, velocity, density, angle)
+ * @returns Detailed impact analysis results
  */
 export function calculateImpact(asteroid: AsteroidData): ImpactResults {
   const density = asteroid.density || 2600 // default rocky asteroid density

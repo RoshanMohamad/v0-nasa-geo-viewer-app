@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Play, RotateCcw, Zap, Loader2, AlertCircle, Pause, Plus } from "lucide-react"
+import { Play, RotateCcw, Zap, Loader2, AlertCircle, Pause, Plus, Target } from "lucide-react"
 import { fetchNearEarthObjects, type NeoData } from "@/lib/nasa-neo-api"
 
 interface ControlPanelProps {
@@ -24,8 +24,18 @@ interface ControlPanelProps {
   startPosition?: string
   onStartPositionChange?: (value: string) => void
   onSpawnAsteroid?: () => void
+  manualPlacementMode?: boolean
+  onManualPlacementToggle?: () => void
 }
 
+/**
+ * ControlPanel Component - Asteroid simulation configuration interface
+ * 
+ * Provides three modes of asteroid configuration:
+ * 1. Custom - Manual parameter adjustment
+ * 2. Presets - Historical impact events
+ * 3. NASA Data - Real near-Earth objects from NASA API
+ */
 export function ControlPanel({
   asteroidSize,
   asteroidSpeed,
@@ -41,6 +51,8 @@ export function ControlPanel({
   startPosition = "Near Mars",
   onStartPositionChange,
   onSpawnAsteroid,
+  manualPlacementMode = false,
+  onManualPlacementToggle,
 }: ControlPanelProps) {
   const [selectedPreset, setSelectedPreset] = useState<string>("")
   const [neoData, setNeoData] = useState<NeoData[]>([])
@@ -48,6 +60,7 @@ export function ControlPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Fetch real-time NASA Near-Earth Objects data on component mount
   useEffect(() => {
     const loadNeoData = async () => {
       setLoading(true)
@@ -333,28 +346,42 @@ export function ControlPanel({
         </TabsContent>
       </Tabs>
 
-      <div className="flex gap-2 pt-6 border-t border-border/50 mt-6">
-        {!simulationActive ? (
-          <Button onClick={onStart} className="flex-1">
-            <Play className="w-4 h-4 mr-2" />
-            Start Simulation
+      <div className="flex flex-col gap-2 pt-6 border-t border-border/50 mt-6">
+        {/* Manual Placement Mode Toggle */}
+        {simulationActive && onManualPlacementToggle && (
+          <Button 
+            onClick={onManualPlacementToggle} 
+            variant={manualPlacementMode ? "default" : "outline"}
+            className="w-full"
+          >
+            <Target className="w-4 h-4 mr-2" />
+            {manualPlacementMode ? "Click Mode: ON" : "Click to Place Asteroids"}
           </Button>
-        ) : (
-          <>
-            <Button onClick={onPauseToggle} variant="outline" className="flex-1 bg-transparent">
-              {isPaused ? <Play className="w-4 h-4 mr-2" /> : <Pause className="w-4 h-4 mr-2" />}
-              {isPaused ? "Resume" : "Pause"}
-            </Button>
-            <Button onClick={onSpawnAsteroid} variant="secondary" className="flex-1">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Asteroid
-            </Button>
-          </>
         )}
-        <Button onClick={onReset} variant="outline" disabled={!simulationActive}>
-          <RotateCcw className="w-4 h-4 mr-2" />
-          Reset
-        </Button>
+        
+        <div className="flex gap-2">
+          {!simulationActive ? (
+            <Button onClick={onStart} className="flex-1">
+              <Play className="w-4 h-4 mr-2" />
+              Start Simulation
+            </Button>
+          ) : (
+            <>
+              <Button onClick={onPauseToggle} variant="outline" className="flex-1 bg-transparent">
+                {isPaused ? <Play className="w-4 h-4 mr-2" /> : <Pause className="w-4 h-4 mr-2" />}
+                {isPaused ? "Resume" : "Pause"}
+              </Button>
+              <Button onClick={onSpawnAsteroid} variant="secondary" className="flex-1">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Asteroid
+              </Button>
+            </>
+          )}
+          <Button onClick={onReset} variant="outline" disabled={!simulationActive}>
+            <RotateCcw className="w-4 h-4 mr-2" />
+            Reset
+          </Button>
+        </div>
       </div>
 
       <div className="mt-4 p-3 bg-primary/10 rounded-lg flex items-start gap-2">
