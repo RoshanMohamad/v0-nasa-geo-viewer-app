@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import gsap from "gsap"
+import { calculateOrbitalPosition, type CelestialBody } from "@/lib/orbital-mechanics"
 
 interface SolarSystemProps {
   onPlanetHover?: (planet: string | null) => void
@@ -25,7 +26,10 @@ interface SolarSystemProps {
   isPaused?: boolean
   onSpawnAsteroid?: () => void
   asteroidSpawnCounter?: number
-  focusPlanet?: string | null  // New: planet to focus camera on
+  focusPlanet?: string | null
+  customObjects?: CelestialBody[]  // New: custom asteroids/comets/objects
+  simulationTime?: number  // New: simulation time for orbital calculations
+  onObjectClick?: (object: CelestialBody) => void  // New: handle custom object clicks
 }
 
 interface Asteroid {
@@ -47,6 +51,9 @@ export function SolarSystem({
   onSpawnAsteroid,
   asteroidSpawnCounter = 0,
   focusPlanet = null,
+  customObjects = [],
+  simulationTime = 0,
+  onObjectClick,
 }: SolarSystemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -67,6 +74,19 @@ export function SolarSystem({
     eccentricity: number
     name: string
   }>>([])
+  const simulationTimeRef = useRef(0)
+  const isPausedRef = useRef(isPaused)
+  const textureLoaderRef = useRef<THREE.TextureLoader | null>(null)
+  const enhanceTextureRef = useRef<((texture: THREE.Texture) => THREE.Texture) | null>(null)
+
+  // Keep refs in sync with props
+  useEffect(() => {
+    simulationTimeRef.current = simulationTime
+  }, [simulationTime])
+
+  useEffect(() => {
+    isPausedRef.current = isPaused
+  }, [isPaused])
 
   const G = 0.5
   const sunMass = 1000
@@ -198,6 +218,9 @@ export function SolarSystem({
     // Load texture loader with quality settings
     const textureLoader = new THREE.TextureLoader(loadingManager)
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
+    
+    // Store in ref for use in animate function
+    textureLoaderRef.current = textureLoader
 
     // Helper function to improve texture quality - ULTRA PERFECTION MODE
     const enhanceTexture = (texture: THREE.Texture) => {
@@ -214,6 +237,9 @@ export function SolarSystem({
       texture.flipY = true  // Correct texture orientation
       return texture
     }
+    
+    // Store in ref for use in animate function
+    enhanceTextureRef.current = enhanceTexture
 
     // Add realistic starfield background (8K Milky Way)
     const starGeometry = new THREE.SphereGeometry(500, 64, 64)
@@ -433,18 +459,19 @@ export function SolarSystem({
     // Store planets in ref for camera animations
     planetsRef.current = planets
 
-    let lastTime = performance.now()
     const animate = () => {
       requestAnimationFrame(animate)
 
-      const currentTime = performance.now()
-      const deltaTime = (currentTime - lastTime) / 1000
-      lastTime = currentTime
-
-      if (!isPaused) {
+      if (!isPausedRef.current) {
+        const currentSimTime = simulationTimeRef.current
+        
         const sun = sceneRef.current?.children.find((child) => child instanceof THREE.Mesh) as THREE.Mesh
-        sun.rotation.y += 0.002 * deltaTime * 60
-        const pulseScale = 1 + Math.sin(currentTime * 0.001) * 0.02
+        // Sun's rotation period: ~27 days = 2,332,800 seconds
+        // Angular velocity = 2π / 2,332,800 = 0.00000269 rad/s
+        // At 1x speed (real-time): Sun rotates very slowly (realistic)
+        // At higher speeds: Sun rotation speeds up proportionally
+        sun.rotation.y = currentSimTime * 0.00000269
+        const pulseScale = 1 + Math.sin(currentSimTime * 0.00001) * 0.02
         sun.scale.set(pulseScale, pulseScale, pulseScale)
 
         planets.forEach((planet) => {
@@ -459,56 +486,388 @@ export function SolarSystem({
           // Kepler's 2nd Law: angular velocity = mean_angular_velocity × (a/r)²
           // This makes planets move FASTER when close to sun, SLOWER when far
           const angularVelocity = planet.meanAngularVelocity * Math.pow(a / r, 2)
-          planet.angle += angularVelocity * deltaTime * 10
+          planet.angle = currentSimTime * angularVelocity * 0.01
           
           // Update position on elliptical orbit (Kepler's 1st Law)
           planet.mesh.position.x = r * Math.cos(theta)
           planet.mesh.position.z = r * Math.sin(theta)
           
-          // Realistic rotation speeds (showing surface features)
+          // Realistic rotation speeds (actual real-world periods) - synced with simulationTime
+          // Rotation speeds in rad/s based on actual planetary rotation periods
           switch (planet.name) {
             case "Mercury":
-              planet.mesh.rotation.y += 0.002 * deltaTime * 60
+              // Mercury: 58.6 days = 5,063,040 sec → ω = 2π/5063040 = 0.00000124 rad/s
+              planet.mesh.rotation.y = currentSimTime * 0.00000124
               break
             case "Venus":
-              planet.mesh.rotation.y -= 0.0005 * deltaTime * 60 // Retrograde!
+              // Venus: 243 days (retrograde) = 20,995,200 sec → ω = -2π/20995200 = -0.000000299 rad/s
+              planet.mesh.rotation.y = -currentSimTime * 0.000000299
               break
             case "Earth":
-              planet.mesh.rotation.y += 0.01 * deltaTime * 60
+              // Earth: 24 hours = 86,400 sec → ω = 2π/86400 = 0.0000727 rad/s
+              planet.mesh.rotation.y = currentSimTime * 0.0000727
               // Rotate moon around Earth
               const earthMoon = planet.mesh.children.find(
                 (child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.SphereGeometry && (child.geometry as THREE.SphereGeometry).parameters.radius === 0.35
               )
               if (earthMoon) {
-                const moonAngle = currentTime * 0.0005
+                // Moon orbit: 27.3 days = 2,358,720 sec → ω = 2π/2358720 = 0.00000266 rad/s
+                const moonAngle = currentSimTime * 0.00000266
                 earthMoon.position.x = Math.cos(moonAngle) * 3
                 earthMoon.position.z = Math.sin(moonAngle) * 3
-                earthMoon.rotation.y += 0.005 * deltaTime * 60
+                // Moon rotation (tidally locked, same as orbit)
+                earthMoon.rotation.y = currentSimTime * 0.00000266
               }
               break
             case "Mars":
-              planet.mesh.rotation.y += 0.009 * deltaTime * 60
+              // Mars: 24.6 hours = 88,560 sec → ω = 2π/88560 = 0.0000709 rad/s
+              planet.mesh.rotation.y = currentSimTime * 0.0000709
               break
             case "Jupiter":
-              planet.mesh.rotation.y += 0.024 * deltaTime * 60 // Fast rotation!
+              // Jupiter: 9.9 hours = 35,640 sec → ω = 2π/35640 = 0.000176 rad/s (fastest!)
+              planet.mesh.rotation.y = currentSimTime * 0.000176
               break
             case "Saturn":
-              planet.mesh.rotation.y += 0.022 * deltaTime * 60
+              // Saturn: 10.7 hours = 38,520 sec → ω = 2π/38520 = 0.000163 rad/s
+              planet.mesh.rotation.y = currentSimTime * 0.000163
               break
             case "Uranus":
-              planet.mesh.rotation.y -= 0.014 * deltaTime * 60 // Retrograde!
+              // Uranus: 17.2 hours (retrograde) = 61,920 sec → ω = -2π/61920 = -0.000101 rad/s
+              planet.mesh.rotation.y = -currentSimTime * 0.000101
               break
             case "Neptune":
-              planet.mesh.rotation.y += 0.015 * deltaTime * 60
+              // Neptune: 16.1 hours = 57,960 sec → ω = 2π/57960 = 0.000108 rad/s
+              planet.mesh.rotation.y = currentSimTime * 0.000108
               break
             default:
-              planet.mesh.rotation.y += 0.01 * deltaTime * 60
+              planet.mesh.rotation.y = currentSimTime * 0.0000727
           }
         })
 
+        // Render custom objects (asteroids, comets, dwarf planets) using orbital mechanics
+        customObjects.forEach((obj) => {
+          // Find or create mesh for this custom object
+          let customMesh = scene.children.find(
+            (child) => child.userData.customObjectId === obj.id
+          ) as THREE.Mesh | undefined
+
+          if (!customMesh) {
+            // Create new mesh for custom object with enhanced visuals
+            const size = Math.max(0.5, obj.radius / 1000) // Convert km to scene units, minimum 0.5 for visibility
+            
+            // Create geometry based on object type for realistic appearance
+            let geometry: THREE.BufferGeometry
+            
+            if (obj.type === 'asteroid') {
+              // Irregular asteroid shape using deformed icosahedron
+              geometry = new THREE.IcosahedronGeometry(size, 2)
+              // Add random deformation for irregular surface
+              const positions = geometry.attributes.position
+              for (let i = 0; i < positions.count; i++) {
+                const vertex = new THREE.Vector3(
+                  positions.getX(i),
+                  positions.getY(i),
+                  positions.getZ(i)
+                )
+                const randomScale = 0.7 + Math.random() * 0.6 // 70% to 130% of original
+                vertex.multiplyScalar(randomScale)
+                positions.setXYZ(i, vertex.x, vertex.y, vertex.z)
+              }
+              geometry.computeVertexNormals() // Recalculate normals for lighting
+            } else if (obj.type === 'comet') {
+              // Slightly elongated shape for comet nucleus
+              geometry = new THREE.SphereGeometry(size, 32, 32)
+              geometry.scale(1.2, 0.8, 1.0) // Elongated along X-axis
+            } else if (obj.type === 'dwarf-planet' || obj.type === 'trans-neptunian') {
+              // High-detail sphere for dwarf planets
+              geometry = new THREE.SphereGeometry(size, 64, 64)
+            } else {
+              // Default sphere
+              geometry = new THREE.SphereGeometry(size, 32, 32)
+            }
+            
+            // Color based on composition (use object's color if available)
+            let color = obj.color ? parseInt(obj.color.replace('#', '0x')) : 0x888888
+            let emissive = 0x333333
+            let orbitColor = 0xff6600 // Orange for asteroids
+            
+            // Load textures based on object type for realistic appearance
+            let material: THREE.MeshStandardMaterial
+            
+            // Check if texture loader is available
+            const hasTextureLoader = textureLoaderRef.current && enhanceTextureRef.current
+            
+            if (obj.type === 'asteroid') {
+              // Rocky asteroid with moon-like texture + custom color tint
+              if (hasTextureLoader) {
+                const asteroidTexture = enhanceTextureRef.current!(textureLoaderRef.current!.load('/textures/2k_moon.jpg'))
+                material = new THREE.MeshStandardMaterial({
+                  map: asteroidTexture,
+                  color: color, // Tint the texture with custom color
+                  roughness: 0.95,
+                  metalness: obj.composition === 'metallic' ? 0.6 : 0.1,
+                  bumpMap: asteroidTexture, // Use same texture for bump mapping
+                  bumpScale: 0.05, // Subtle surface detail
+                })
+              } else {
+                // Fallback without texture
+                material = new THREE.MeshStandardMaterial({
+                  color,
+                  roughness: 0.95,
+                  metalness: obj.composition === 'metallic' ? 0.6 : 0.1,
+                })
+              }
+              emissive = 0xff6600
+              orbitColor = 0xff6600
+            } else if (obj.type === 'comet') {
+              // Icy comet with high reflectivity
+              if (hasTextureLoader) {
+                const cometTexture = enhanceTextureRef.current!(textureLoaderRef.current!.load('/textures/2k_moon.jpg'))
+                material = new THREE.MeshStandardMaterial({
+                  map: cometTexture,
+                  color: 0xaaccff, // Icy blue tint
+                  roughness: 0.3, // More reflective (icy)
+                  metalness: 0.1,
+                  emissive: 0x0099ff,
+                  emissiveIntensity: 0.4, // Brighter glow
+                  bumpMap: cometTexture,
+                  bumpScale: 0.03,
+                })
+              } else {
+                // Fallback without texture
+                material = new THREE.MeshStandardMaterial({
+                  color: 0xaaccff,
+                  roughness: 0.3,
+                  metalness: 0.1,
+                  emissive: 0x0099ff,
+                  emissiveIntensity: 0.4,
+                })
+              }
+              emissive = 0x0099ff
+              orbitColor = 0x00ccff
+            } else if (obj.type === 'dwarf-planet') {
+              // Dwarf planet with rocky texture
+              if (hasTextureLoader) {
+                const dwarfTexture = enhanceTextureRef.current!(textureLoaderRef.current!.load('/textures/2k_mercury.jpg'))
+                material = new THREE.MeshStandardMaterial({
+                  map: dwarfTexture,
+                  color: color,
+                  roughness: 0.85,
+                  metalness: 0.15,
+                  bumpMap: dwarfTexture,
+                  bumpScale: 0.04,
+                })
+              } else {
+                // Fallback without texture
+                material = new THREE.MeshStandardMaterial({
+                  color,
+                  roughness: 0.85,
+                  metalness: 0.15,
+                })
+              }
+              emissive = 0x886644
+              orbitColor = 0xffaa44
+            } else if (obj.type === 'trans-neptunian') {
+              // Distant icy object
+              if (hasTextureLoader) {
+                const tnoTexture = enhanceTextureRef.current!(textureLoaderRef.current!.load('/textures/2k_moon.jpg'))
+                material = new THREE.MeshStandardMaterial({
+                  map: tnoTexture,
+                  color: 0xccddff, // Icy purple-blue tint
+                  roughness: 0.5,
+                  metalness: 0.05,
+                  emissive: 0x6666ff,
+                  emissiveIntensity: 0.2,
+                  bumpMap: tnoTexture,
+                  bumpScale: 0.02,
+                })
+              } else {
+                // Fallback without texture
+                material = new THREE.MeshStandardMaterial({
+                  color: 0xccddff,
+                  roughness: 0.5,
+                  metalness: 0.05,
+                  emissive: 0x6666ff,
+                  emissiveIntensity: 0.2,
+                })
+              }
+              emissive = 0x6666ff
+              orbitColor = 0x9966ff
+            } else {
+              // Fallback material
+              material = new THREE.MeshStandardMaterial({
+                color,
+                emissive,
+                emissiveIntensity: 0.3,
+                roughness: 0.8,
+                metalness: 0.2,
+              })
+            }
+            
+            customMesh = new THREE.Mesh(geometry, material)
+            customMesh.userData.customObjectId = obj.id
+            customMesh.userData.customObject = obj
+            customMesh.castShadow = true
+            customMesh.receiveShadow = true
+            scene.add(customMesh)
+            
+            // Add comet tail particle system for comets
+            if (obj.type === 'comet') {
+              const particleCount = 500
+              const particlesGeometry = new THREE.BufferGeometry()
+              const particlePositions = new Float32Array(particleCount * 3)
+              const particleColors = new Float32Array(particleCount * 3)
+              
+              // Create tail particles trailing behind
+              for (let i = 0; i < particleCount; i++) {
+                const distance = (i / particleCount) * size * 15 // Tail length
+                const spread = (i / particleCount) * size * 2 // Tail spread
+                
+                particlePositions[i * 3] = -distance + (Math.random() - 0.5) * spread
+                particlePositions[i * 3 + 1] = (Math.random() - 0.5) * spread
+                particlePositions[i * 3 + 2] = (Math.random() - 0.5) * spread
+                
+                // Fade from cyan to transparent
+                const alpha = 1 - (i / particleCount)
+                particleColors[i * 3] = 0.5 // R
+                particleColors[i * 3 + 1] = 0.8 + alpha * 0.2 // G
+                particleColors[i * 3 + 2] = 1.0 // B
+              }
+              
+              particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3))
+              particlesGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3))
+              
+              const particlesMaterial = new THREE.PointsMaterial({
+                size: size * 0.3,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+              })
+              
+              const cometTail = new THREE.Points(particlesGeometry, particlesMaterial)
+              cometTail.userData.cometTailId = obj.id
+              customMesh.add(cometTail) // Attach tail to comet
+              
+              console.log(`✨ Added particle tail for comet ${obj.name}`)
+            }
+            
+            console.log(`✅ Created enhanced mesh for ${obj.name} (ID: ${obj.id})`)
+
+            // Create elliptical orbit path for custom object
+            // Using Kepler's equation: r = a(1 - e²) / (1 + e·cos(θ))
+            const orbitGeometry = new THREE.BufferGeometry()
+            const orbitPoints = []
+            const a = obj.orbitalElements.semiMajorAxis * 28 // Convert AU to scene units (Earth at 28)
+            const e = obj.orbitalElements.eccentricity
+            const inc = obj.orbitalElements.inclination * (Math.PI / 180) // Convert degrees to radians
+            const omega = obj.orbitalElements.longitudeOfAscendingNode * (Math.PI / 180)
+            const w = obj.orbitalElements.argumentOfPerihelion * (Math.PI / 180)
+            
+            for (let i = 0; i <= 256; i++) {
+              const theta = (i / 256) * Math.PI * 2
+              const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta))
+              
+              // Calculate position in orbital plane
+              const xOrbital = r * Math.cos(theta)
+              const yOrbital = r * Math.sin(theta)
+              
+              // Apply orbital rotations (3D orientation)
+              // 1. Rotate by argument of perihelion (ω)
+              const x1 = xOrbital * Math.cos(w) - yOrbital * Math.sin(w)
+              const y1 = xOrbital * Math.sin(w) + yOrbital * Math.cos(w)
+              
+              // 2. Apply inclination (tilt orbit plane)
+              const x2 = x1
+              const y2 = y1 * Math.cos(inc)
+              const z2 = y1 * Math.sin(inc)
+              
+              // 3. Rotate by longitude of ascending node (Ω)
+              const x3 = x2 * Math.cos(omega) - y2 * Math.sin(omega)
+              const y3 = x2 * Math.sin(omega) + y2 * Math.cos(omega)
+              const z3 = z2
+              
+              orbitPoints.push(x3, z3, y3) // Swizzle for Three.js coordinate system (Y-up)
+            }
+            
+            orbitGeometry.setAttribute("position", new THREE.Float32BufferAttribute(orbitPoints, 3))
+            const orbitMaterial = new THREE.LineBasicMaterial({
+              color: orbitColor,
+              transparent: true,
+              opacity: 0.6,
+              linewidth: 2,
+            })
+            const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial)
+            orbitLine.userData.customOrbitId = obj.id
+            scene.add(orbitLine)
+            
+            console.log(`✅ Created orbit path for ${obj.name}`)
+          }
+
+          // Calculate orbital position using Kepler's equations
+          // CRITICAL: Convert from AU to scene units (Earth is at 28 scene units = 1 AU)
+          const position = calculateOrbitalPosition(obj.orbitalElements, currentSimTime)
+          const scaleAUToScene = 28 // Earth is at distance 28 in scene units
+          customMesh.position.set(
+            position.x * scaleAUToScene, 
+            position.z * scaleAUToScene,  // Swap Y and Z for Three.js Y-up coordinate system
+            position.y * scaleAUToScene
+          )
+          
+          // Enhanced rotation based on object type
+          if (obj.type === 'asteroid') {
+            // Tumbling asteroid rotation (irregular)
+            customMesh.rotation.x = currentSimTime * 0.02 + Math.sin(currentSimTime * 0.01) * 0.1
+            customMesh.rotation.y = currentSimTime * 0.015
+            customMesh.rotation.z = currentSimTime * 0.008
+          } else if (obj.type === 'comet') {
+            // Slow rotation for comet nucleus
+            customMesh.rotation.x = currentSimTime * 0.005
+            customMesh.rotation.y = currentSimTime * 0.008
+            
+            // Animate comet tail to point away from sun
+            const cometTail = customMesh.children.find(
+              (child) => child.userData.cometTailId === obj.id
+            ) as THREE.Points | undefined
+            
+            if (cometTail) {
+              // Calculate direction away from sun
+              const directionToSun = new THREE.Vector3(0, 0, 0).sub(customMesh.position).normalize()
+              const directionAway = directionToSun.multiplyScalar(-1)
+              
+              // Orient tail away from sun
+              cometTail.quaternion.setFromUnitVectors(
+                new THREE.Vector3(-1, 0, 0), // Default tail direction
+                directionAway
+              )
+              
+              // Pulsing tail effect based on distance to sun
+              const distanceToSun = customMesh.position.length()
+              const tailBrightness = Math.max(0.3, 1.5 - distanceToSun / 50)
+              const material = cometTail.material as THREE.PointsMaterial
+              material.opacity = tailBrightness * 0.6
+            }
+          } else {
+            // Standard rotation for dwarf planets and TNOs
+            customMesh.rotation.y = currentSimTime * 0.01
+          }
+        })
+
+        // Remove meshes and orbits for deleted custom objects
+        const activeObjectIds = new Set(customObjects.map(obj => obj.id))
+        const meshesToRemove = scene.children.filter(
+          (child) => (child.userData.customObjectId || child.userData.customOrbitId) && 
+                     !activeObjectIds.has(child.userData.customObjectId || child.userData.customOrbitId)
+        )
+        meshesToRemove.forEach((mesh) => scene.remove(mesh))
+
+        // Note: Asteroids still use real-time deltaTime for physics simulation
+        // This is intentional as they follow Newtonian physics, not orbital mechanics
         asteroidsRef.current.forEach((asteroid) => {
           if (asteroid.impacted) return
 
+          const deltaTime = 1 / 60 // Fixed timestep for consistent physics
           const gravity = calculateGravity(asteroid.position)
           asteroid.velocity.add(gravity.multiplyScalar(deltaTime))
 
@@ -564,10 +923,40 @@ export function SolarSystem({
     }
     window.addEventListener("resize", handleResize)
 
+    // Handle clicks on custom objects for impact analysis
+    const handleClick = (event: MouseEvent) => {
+      if (!containerRef.current || !cameraRef.current) return
+
+      const rect = containerRef.current.getBoundingClientRect()
+      mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+      mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current)
+      
+      // Check for intersections with custom objects
+      const customMeshes = scene.children.filter(
+        (child) => child.userData.customObjectId
+      )
+      const intersects = raycasterRef.current.intersectObjects(customMeshes)
+
+      if (intersects.length > 0 && onObjectClick) {
+        const clickedMesh = intersects[0].object
+        const customObject = clickedMesh.userData.customObject as CelestialBody
+        if (customObject) {
+          onObjectClick(customObject)
+        }
+      }
+    }
+    
+    containerRef.current.addEventListener("click", handleClick)
+
     return () => {
       window.removeEventListener("resize", handleResize)
-      if (containerRef.current && rendererRef.current?.domElement) {
-        containerRef.current.removeChild(rendererRef.current.domElement)
+      if (containerRef.current) {
+        containerRef.current.removeEventListener("click", handleClick)
+        if (rendererRef.current?.domElement) {
+          containerRef.current.removeChild(rendererRef.current.domElement)
+        }
       }
       controlsRef.current?.dispose()
       rendererRef.current?.dispose()

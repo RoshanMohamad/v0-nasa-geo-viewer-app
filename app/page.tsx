@@ -1,16 +1,27 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { SolarSystem } from "@/components/solar-system"
 import { ControlPanel } from "@/components/control-panel"
 import { PlanetSelector } from "@/components/planet-selector"
+import { CustomObjectManager } from "@/components/custom-object-manager"
+import { ImpactAnalysisModal } from "@/components/impact-analysis-modal"
+import { ImpactVisualization } from "@/components/impact-visualization"
+import { ImpactVisualizationAdvanced } from "@/components/impact-visualization-advanced"
+import { ObjectDetailsPanel } from "@/components/object-details-panel"
+import { OrbitPathViewer } from "@/components/orbit-path-viewer"
+import { fetchRealAsteroid } from "@/lib/nasa-horizons-api"
+import { SimulationTimeControls } from "@/components/simulation-time-controls"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Rocket, Settings, Info, AlertTriangle, Target } from "lucide-react"
+import { Rocket, Settings, Info, AlertTriangle, Target, Atom, ExternalLink } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { calculateImpact, type ImpactResults } from "@/lib/impact-calculator"
+import { calculateImpactProbability, type CelestialBody, type ImpactAnalysis } from "@/lib/orbital-mechanics"
 import type * as THREE from "three"
 
 export default function HomePage() {
+  const router = useRouter()
   const [hoveredPlanet, setHoveredPlanet] = useState<string | null>(null)
   const [asteroidSize, setAsteroidSize] = useState(1)
   const [asteroidSpeed, setAsteroidSpeed] = useState(15)
@@ -27,6 +38,55 @@ export default function HomePage() {
   } | null>(null)
   const [asteroidSpawnCounter, setAsteroidSpawnCounter] = useState(0)
   const [focusedPlanet, setFocusedPlanet] = useState<string | null>(null)
+  
+  // Custom Objects & NASA Integration
+  const [customObjects, setCustomObjects] = useState<CelestialBody[]>([])
+  const [isObjectManagerOpen, setIsObjectManagerOpen] = useState(false)
+  const [isImpactAnalysisOpen, setIsImpactAnalysisOpen] = useState(false)
+  const [isImpactVisualizationOpen, setIsImpactVisualizationOpen] = useState(false)
+  const [isAdvancedImpactOpen, setIsAdvancedImpactOpen] = useState(false)
+  const [isObjectDetailsOpen, setIsObjectDetailsOpen] = useState(false)
+  const [selectedObject, setSelectedObject] = useState<CelestialBody | null>(null)
+  const [selectedImpactAnalysis, setSelectedImpactAnalysis] = useState<{
+    analysis: ImpactAnalysis
+    object: CelestialBody
+  } | null>(null)
+  const [isLoadingNASA, setIsLoadingNASA] = useState(false)
+  const [simulationTime, setSimulationTime] = useState(0)
+  const [timeSpeed, setTimeSpeed] = useState(1000) // Start at 1000x speed for visible orbital motion
+  const [simulationStartDate] = useState(new Date())
+  const [currentSimulationDate, setCurrentSimulationDate] = useState(new Date())
+  const elapsedSecondsRef = useRef(0)
+  const lastUpdateTimeRef = useRef(Date.now())
+
+  // Update simulation time based on speed
+  useEffect(() => {
+    if (isPaused) return
+
+    const updateInterval = setInterval(() => {
+      const now = Date.now()
+      const deltaMs = now - lastUpdateTimeRef.current
+      lastUpdateTimeRef.current = now
+
+      const simulatedSeconds = (deltaMs / 1000) * timeSpeed
+      elapsedSecondsRef.current += simulatedSeconds
+      setSimulationTime(elapsedSecondsRef.current)
+
+      // Update date display
+      const newDate = new Date(simulationStartDate)
+      newDate.setSeconds(newDate.getSeconds() + elapsedSecondsRef.current)
+      setCurrentSimulationDate(newDate)
+    }, 100) // Update 10 times per second
+
+    return () => clearInterval(updateInterval)
+  }, [isPaused, timeSpeed, simulationStartDate])
+
+  const handleResetTime = useCallback(() => {
+    elapsedSecondsRef.current = 0
+    setSimulationTime(0)
+    setCurrentSimulationDate(new Date(simulationStartDate))
+    lastUpdateTimeRef.current = Date.now()
+  }, [simulationStartDate])
 
   const handleStartSimulation = () => {
     setSimulationActive(true)
@@ -74,6 +134,81 @@ export default function HomePage() {
     [],
   )
 
+  const handleAddCustomObject = useCallback((object: CelestialBody) => {
+    setCustomObjects((prev) => [...prev, object])
+  }, [])
+
+  const handleRemoveCustomObject = useCallback((id: string) => {
+    setCustomObjects((prev) => prev.filter((obj) => obj.id !== id))
+  }, [])
+
+  const handleAnalyzeImpact = useCallback((object: CelestialBody, openInModal = false) => {
+    // Earth's orbital elements for comparison
+    const earthOrbit = {
+      semiMajorAxis: 1.0, // AU
+      eccentricity: 0.0167,
+      inclination: 0,
+      longitudeOfAscendingNode: 0,
+      argumentOfPerihelion: 102.9,
+      meanAnomaly: 0,
+    }
+    const analysis = calculateImpactProbability(object, earthOrbit)
+    setSelectedImpactAnalysis({ analysis, object })
+    
+    if (openInModal) {
+      setIsAdvancedImpactOpen(true)
+    } else {
+      // Navigate to dedicated impact analysis page
+      const objectData = encodeURIComponent(JSON.stringify(object))
+      router.push(`/impact-analysis?object=${objectData}`)
+    }
+  }, [router])
+
+  const handleViewObject = useCallback((object: CelestialBody) => {
+    setSelectedObject(object)
+    setIsObjectDetailsOpen(true)
+  }, [])
+
+  const handleAddRealAsteroid = useCallback(async (presetKey: string) => {
+    setIsLoadingNASA(true)
+    try {
+      const asteroid = await fetchRealAsteroid(presetKey as any)
+      if (asteroid) {
+        setCustomObjects((prev) => [...prev, asteroid])
+        alert(
+          `✅ Successfully loaded ${asteroid.name} from NASA Horizons!\n\n` +
+          `Orbital Details:\n` +
+          `• Distance: ${asteroid.orbitalElements.semiMajorAxis.toFixed(3)} AU\n` +
+          `• Eccentricity: ${asteroid.orbitalElements.eccentricity.toFixed(4)}\n` +
+          `• Inclination: ${asteroid.orbitalElements.inclination.toFixed(2)}°\n` +
+          `• Mass: ${asteroid.mass.toExponential(2)} kg`
+        )
+      } else {
+        alert(
+          '❌ Failed to load asteroid from NASA Horizons.\n\n' +
+          'Using approximate orbital data instead. ' +
+          'Please check your internet connection.'
+        )
+      }
+    } catch (error) {
+      console.error('Error loading asteroid:', error)
+      alert(
+        '❌ Error loading asteroid from NASA.\n\n' +
+        `Details: ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
+        'Please try again later.'
+      )
+    } finally {
+      setIsLoadingNASA(false)
+    }
+  }, [])
+
+  const handleViewDetailedImpact = useCallback(() => {
+    if (selectedImpactAnalysis) {
+      setIsImpactAnalysisOpen(false)
+      setIsImpactVisualizationOpen(true)
+    }
+  }, [selectedImpactAnalysis])
+
   const previewImpact = calculateImpact({
     diameter: asteroidSize,
     velocity: asteroidSpeed,
@@ -108,6 +243,15 @@ export default function HomePage() {
               <h1 className="text-2xl font-bold text-foreground">Solar System & Asteroid Impact Simulator</h1>
             </div>
             <nav className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setIsObjectManagerOpen(true)}
+                className="hover:bg-primary/10"
+              >
+                <Atom className="w-4 h-4 mr-2" />
+                Custom Objects
+              </Button>
               <Button variant="ghost" size="sm">
                 <Info className="w-4 h-4 mr-2" />
                 About
@@ -138,6 +282,9 @@ export default function HomePage() {
             onSpawnAsteroid={handleSpawnAsteroid}
             asteroidSpawnCounter={asteroidSpawnCounter}
             focusPlanet={focusedPlanet}
+            customObjects={customObjects}
+            simulationTime={simulationTime}
+            onObjectClick={handleAnalyzeImpact}
           />
         </div>
 
@@ -164,6 +311,16 @@ export default function HomePage() {
           <PlanetSelector
             selectedPlanet={focusedPlanet}
             onSelectPlanet={setFocusedPlanet}
+          />
+
+          {/* Simulation Time Controls */}
+          <SimulationTimeControls
+            isPaused={isPaused}
+            onPauseToggle={handlePauseToggle}
+            timeSpeed={timeSpeed}
+            onTimeSpeedChange={setTimeSpeed}
+            simulationDate={currentSimulationDate}
+            onReset={handleResetTime}
           />
 
           {meteorData && (
@@ -327,10 +484,120 @@ export default function HomePage() {
                 </span>
               </div>
               <div className="text-muted-foreground">8 Planets Orbiting</div>
+              {customObjects.length > 0 && (
+                <div className="text-muted-foreground">
+                  {customObjects.length} Custom Object{customObjects.length !== 1 ? 's' : ''}
+                </div>
+              )}
             </div>
           </Card>
         </div>
+
+        {/* Orbit Path Comparison Viewer */}
+        <OrbitPathViewer
+          customObjects={customObjects}
+          onFocusObject={(object) => {
+            // Focus camera on object in 3D view
+            console.log('Focus on:', object.name)
+          }}
+        />
       </main>
+
+      {/* Custom Object Manager Modal */}
+      {isObjectManagerOpen && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute -top-12 right-0 text-foreground hover:text-primary"
+              onClick={() => setIsObjectManagerOpen(false)}
+            >
+              ✕
+            </Button>
+            <CustomObjectManager
+              onAddObject={handleAddCustomObject}
+              onRemoveObject={handleRemoveCustomObject}
+              customObjects={customObjects}
+              onAddRealAsteroid={handleAddRealAsteroid}
+              onAnalyzeImpact={handleAnalyzeImpact}
+              onViewObject={handleViewObject}
+            />
+            {isLoadingNASA && (
+              <div className="absolute top-4 right-4 bg-blue-950/90 text-white px-4 py-2 rounded-lg shadow-lg">
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>Loading NASA data...</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Impact Analysis Modal */}
+      {selectedImpactAnalysis && isImpactAnalysisOpen && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute -top-12 right-0 text-foreground hover:text-primary"
+              onClick={() => {
+                setIsImpactAnalysisOpen(false)
+                setSelectedImpactAnalysis(null)
+              }}
+            >
+              ✕
+            </Button>
+            <ImpactAnalysisModal
+              asteroid={selectedImpactAnalysis.object}
+              analysis={selectedImpactAnalysis.analysis}
+              onClose={() => {
+                setIsImpactAnalysisOpen(false)
+                setSelectedImpactAnalysis(null)
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Detailed Impact Visualization Modal */}
+      {selectedImpactAnalysis && isImpactVisualizationOpen && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <ImpactVisualization
+            object={selectedImpactAnalysis.object}
+            analysis={selectedImpactAnalysis.analysis}
+            onClose={() => {
+              setIsImpactVisualizationOpen(false)
+              setSelectedImpactAnalysis(null)
+            }}
+          />
+        </div>
+      )}
+
+      {/* Advanced Impact Visualization with Top-Down & Surface Views */}
+      {selectedImpactAnalysis && isAdvancedImpactOpen && (
+        <ImpactVisualizationAdvanced
+          analysis={selectedImpactAnalysis.analysis}
+          object={selectedImpactAnalysis.object}
+          onClose={() => {
+            setIsAdvancedImpactOpen(false)
+            setSelectedImpactAnalysis(null)
+          }}
+        />
+      )}
+
+      {/* Object Details Panel */}
+      {selectedObject && isObjectDetailsOpen && (
+        <ObjectDetailsPanel
+          object={selectedObject}
+          onClose={() => {
+            setIsObjectDetailsOpen(false)
+            setSelectedObject(null)
+          }}
+        />
+      )}
     </div>
   )
 }
