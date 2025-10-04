@@ -51,6 +51,7 @@ export function SolarSystem({
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster())
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2())
   const lastAsteroidConfigRef = useRef<string>("")
+  const controlsRef = useRef<OrbitControls | null>(null)
 
   const G = 0.5
   const sunMass = 1000
@@ -91,21 +92,22 @@ export function SolarSystem({
     rendererRef.current = renderer
 
     const controls = new OrbitControls(camera, renderer.domElement)
+    controlsRef.current = controls
     
     // STEP 1: Enable smooth damping for gradual deceleration
     controls.enableDamping = true
-    controls.dampingFactor = 0.12  // Higher = smoother, more gradual stops
+    controls.dampingFactor = 0.05  // Lower = smoother, more responsive (0.05 is ideal)
     
     // STEP 2: Set zoom distance range (step-by-step accessibility)
     controls.minDistance = 0.5  // EXTREME close-up capability
     controls.maxDistance = 800  // Wider overview range
     
     // STEP 3: Configure smooth zoom behavior
-    controls.zoomSpeed = 0.6  // Slower = more controlled, step-by-step feel
+    controls.zoomSpeed = 1.0  // Standard speed for smooth zooming
     controls.enableZoom = true
     
     // STEP 4: Set rotation smoothness
-    controls.rotateSpeed = 0.7  // Slower for smooth, controlled rotation
+    controls.rotateSpeed = 0.5  // Smooth, controlled rotation
     controls.maxPolarAngle = Math.PI
     
     // STEP 5: Configure panning smoothness
@@ -204,22 +206,23 @@ export function SolarSystem({
 
     // Real orbital periods (Earth days) and eccentricity from NASA
     // Eccentricity: 0 = perfect circle, >0 = ellipse (how oval-shaped)
+    // Using Kepler's 3rd Law: T² ∝ a³ (orbital period squared is proportional to semi-major axis cubed)
     const planetsData = [
-      { name: "Mercury", distance: 15, size: 0.8, color: 0x8c7853, speed: 0.04, eccentricity: 0.206, emissive: 0x3d3428 },
-      { name: "Venus", distance: 20, size: 1.2, color: 0xffc649, speed: 0.03, eccentricity: 0.007, emissive: 0x664d1e },
-      { name: "Earth", distance: 28, size: 1.3, color: 0x4a90e2, speed: 0.02, eccentricity: 0.017, emissive: 0x1a3a5a },
-      { name: "Mars", distance: 35, size: 1, color: 0xe27b58, speed: 0.018, eccentricity: 0.093, emissive: 0x5a2f22 },
-      { name: "Jupiter", distance: 50, size: 3, color: 0xc88b3a, speed: 0.01, eccentricity: 0.048, emissive: 0x4d3617 },
-      { name: "Saturn", distance: 65, size: 2.5, color: 0xfad5a5, speed: 0.008, eccentricity: 0.056, emissive: 0x645542 },
-      { name: "Uranus", distance: 78, size: 2, color: 0x4fd0e7, speed: 0.006, eccentricity: 0.046, emissive: 0x1f535c },
-      { name: "Neptune", distance: 88, size: 1.9, color: 0x4166f5, speed: 0.005, eccentricity: 0.010, emissive: 0x1a2962 },
+      { name: "Mercury", distance: 15, size: 0.8, color: 0x8c7853, eccentricity: 0.206, emissive: 0x3d3428 },
+      { name: "Venus", distance: 20, size: 1.2, color: 0xffc649, eccentricity: 0.007, emissive: 0x664d1e },
+      { name: "Earth", distance: 28, size: 1.3, color: 0x4a90e2, eccentricity: 0.017, emissive: 0x1a3a5a },
+      { name: "Mars", distance: 35, size: 1, color: 0xe27b58, eccentricity: 0.093, emissive: 0x5a2f22 },
+      { name: "Jupiter", distance: 50, size: 3, color: 0xc88b3a, eccentricity: 0.048, emissive: 0x4d3617 },
+      { name: "Saturn", distance: 65, size: 2.5, color: 0xfad5a5, eccentricity: 0.056, emissive: 0x645542 },
+      { name: "Uranus", distance: 78, size: 2, color: 0x4fd0e7, eccentricity: 0.046, emissive: 0x1f535c },
+      { name: "Neptune", distance: 88, size: 1.9, color: 0x4166f5, eccentricity: 0.010, emissive: 0x1a2962 },
     ]
 
     const planets: Array<{
       mesh: THREE.Mesh
       orbit: THREE.Line
       angle: number
-      speed: number
+      meanAngularVelocity: number  // Kepler's 3rd Law: derived from orbital period
       distance: number
       eccentricity: number
       name: string
@@ -363,11 +366,16 @@ export function SolarSystem({
       const orbit = new THREE.Line(orbitGeometry, orbitMaterial)
       scene.add(orbit)
 
+      // Kepler's 3rd Law: T² = k·a³
+      // Mean angular velocity = 2π/T, so ω ∝ 1/√(a³) = a^(-3/2)
+      // Normalize to Earth's orbit (distance = 28)
+      const meanAngularVelocity = 0.02 * Math.pow(28 / planetData.distance, 1.5)
+
       planets.push({
         mesh: planet,
         orbit,
         angle: Math.random() * Math.PI * 2,
-        speed: planetData.speed,
+        meanAngularVelocity,  // Kepler's 3rd Law
         distance: planetData.distance,
         eccentricity: planetData.eccentricity,
         name: planetData.name,
@@ -389,15 +397,20 @@ export function SolarSystem({
         sun.scale.set(pulseScale, pulseScale, pulseScale)
 
         planets.forEach((planet) => {
-          planet.angle += planet.speed * deltaTime * 10
-          
-          // Calculate elliptical position using Kepler's equation
-          // r = a(1 - e²) / (1 + e·cos(θ))
+          // Kepler's 2nd Law: Equal areas in equal times
+          // Angular velocity varies with distance: dθ/dt ∝ 1/r²
+          // Calculate current distance from sun
           const a = planet.distance  // semi-major axis
           const e = planet.eccentricity
           const theta = planet.angle
           const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta))
           
+          // Kepler's 2nd Law: angular velocity = mean_angular_velocity × (a/r)²
+          // This makes planets move FASTER when close to sun, SLOWER when far
+          const angularVelocity = planet.meanAngularVelocity * Math.pow(a / r, 2)
+          planet.angle += angularVelocity * deltaTime * 10
+          
+          // Update position on elliptical orbit (Kepler's 1st Law)
           planet.mesh.position.x = r * Math.cos(theta)
           planet.mesh.position.z = r * Math.sin(theta)
           
@@ -481,8 +494,11 @@ export function SolarSystem({
         asteroidsRef.current = asteroidsRef.current.filter((a) => !a.impacted)
       }
 
-      const controls = cameraRef.current ? new OrbitControls(cameraRef.current, rendererRef.current?.domElement) : null
-      controls?.update()
+      // Update controls - CRITICAL: Use the stored reference, don't create new instance!
+      if (controlsRef.current) {
+        controlsRef.current.update()
+      }
+      
       if (sceneRef.current && cameraRef.current) {
         rendererRef.current?.render(sceneRef.current, cameraRef.current)
       }
@@ -502,6 +518,7 @@ export function SolarSystem({
       if (containerRef.current && rendererRef.current?.domElement) {
         containerRef.current.removeChild(rendererRef.current.domElement)
       }
+      controlsRef.current?.dispose()
       rendererRef.current?.dispose()
     }
   }, []) // Empty dependency array - scene setup only runs once
