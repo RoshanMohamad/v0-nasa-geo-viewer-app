@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { SolarSystem3DView } from "@/components/solar-system-3d-view"
 import { CustomObjectManager } from "@/components/custom-object-manager"
-import { ImpactAnalysisModalEnhanced } from "@/components/impact-analysis-modal-enhanced"
+import { ImpactAnalysisModal } from "@/components/impact-analysis-modal"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -348,8 +348,8 @@ export default function ImpactAnalysis3DPage() {
 
       {/* Impact Analysis Modal */}
       {showAnalysisModal && selectedObject && impactAnalysis && (
-        <ImpactAnalysisModalEnhanced
-          object={selectedObject}
+        <ImpactAnalysisModal
+          asteroid={selectedObject}
           analysis={impactAnalysis}
           onClose={() => setShowAnalysisModal(false)}
         />
