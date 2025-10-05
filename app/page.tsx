@@ -5,6 +5,7 @@ import { SolarSystem } from "@/components/solar-system"
 import { ControlPanel } from "@/components/control-panel"
 import { PlanetSelector } from "@/components/planet-selector"
 import { CustomObjectManager } from "@/components/custom-object-manager"
+import { AsteroidControlPanel } from "@/components/asteroid-control-panel"
 import { ImpactAnalysisModal } from "@/components/impact-analysis-modal"
 import { ImpactVisualization } from "@/components/impact-visualization"
 import { ImpactVisualizationAdvanced } from "@/components/impact-visualization-advanced"
@@ -18,6 +19,7 @@ import { Rocket, Settings, Info, AlertTriangle, Target, Atom, ExternalLink } fro
 import { useRouter } from "next/navigation"
 import { calculateImpact, type ImpactResults } from "@/lib/impact-calculator"
 import { calculateImpactProbability, type CelestialBody, type ImpactAnalysis } from "@/lib/orbital-mechanics"
+import { generateRandomAsteroid, type CustomAsteroid } from "@/lib/asteroid-system"
 import type * as THREE from "three"
 
 export default function HomePage() {
@@ -41,7 +43,9 @@ export default function HomePage() {
   
   // Custom Objects & NASA Integration
   const [customObjects, setCustomObjects] = useState<CelestialBody[]>([])
+  const [customAsteroids, setCustomAsteroids] = useState<CustomAsteroid[]>([])
   const [isObjectManagerOpen, setIsObjectManagerOpen] = useState(false)
+  const [isAsteroidPanelOpen, setIsAsteroidPanelOpen] = useState(false)
   const [isImpactAnalysisOpen, setIsImpactAnalysisOpen] = useState(false)
   const [isImpactVisualizationOpen, setIsImpactVisualizationOpen] = useState(false)
   const [isAdvancedImpactOpen, setIsAdvancedImpactOpen] = useState(false)
@@ -140,6 +144,35 @@ export default function HomePage() {
 
   const handleRemoveCustomObject = useCallback((id: string) => {
     setCustomObjects((prev) => prev.filter((obj) => obj.id !== id))
+  }, [])
+
+  // Handlers for AsteroidControlPanel
+  const handleAddAsteroid = useCallback((asteroid: CustomAsteroid) => {
+    // Convert CustomAsteroid to CelestialBody format
+    const celestialBody: CelestialBody = {
+      id: asteroid.id,
+      name: asteroid.name,
+      type: 'asteroid',
+      radius: asteroid.size * 100, // Scale size to km
+      mass: asteroid.mass,
+      color: asteroid.color,
+      composition: 'rocky',
+      orbitalElements: {
+        semiMajorAxis: asteroid.semiMajorAxis / 28, // Convert scene units to AU
+        eccentricity: asteroid.eccentricity,
+        inclination: (asteroid.inclination * 180) / Math.PI, // Convert radians to degrees
+        longitudeOfAscendingNode: (asteroid.longitudeOfAscendingNode * 180) / Math.PI,
+        argumentOfPerihelion: (asteroid.argumentOfPeriapsis * 180) / Math.PI,
+        meanAnomaly: (asteroid.meanAnomalyAtEpoch * 180) / Math.PI,
+      },
+    }
+    setCustomObjects((prev) => [...prev, celestialBody])
+    setCustomAsteroids((prev) => [...prev, asteroid])
+  }, [])
+
+  const handleRemoveAsteroid = useCallback((asteroidId: string) => {
+    setCustomObjects((prev) => prev.filter((obj) => obj.id !== asteroidId))
+    setCustomAsteroids((prev) => prev.filter((ast) => ast.id !== asteroidId))
   }, [])
 
   const handleAnalyzeImpact = useCallback((object: CelestialBody, openInModal = false) => {
