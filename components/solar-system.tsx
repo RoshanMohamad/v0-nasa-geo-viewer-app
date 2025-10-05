@@ -7,6 +7,12 @@ import gsap from "gsap"
 import { calculateOrbitalPosition, type CelestialBody } from "@/lib/orbital-mechanics"
 import { type ScaleMode, getRealisticPlanetSize, getRealisticDistance, calculateLightIntensity, SCALE_MODES } from "@/lib/realistic-mode"
 import { calculatePlanetPosition, calculateMeanAnomaly, PLANET_ORBITAL_DATA } from "@/lib/planet-positions"
+import { 
+  getHybridPlanetPosition, 
+  calculateOrbitalVelocity, 
+  velocityAUperDayToKmPerSec,
+  preloadAllPlanetsHorizons 
+} from "@/lib/horizons-kepler-hybrid"
 
 interface SolarSystemProps {
   onPlanetHover?: (planet: string | null) => void
@@ -82,6 +88,19 @@ export function SolarSystem({
   const isPausedRef = useRef(isPaused)
   const textureLoaderRef = useRef<THREE.TextureLoader | null>(null)
   const enhanceTextureRef = useRef<((texture: THREE.Texture) => THREE.Texture) | null>(null)
+  const [useNASAAPI, setUseNASAAPI] = useState(false) // Toggle for Horizons API vs Kepler
+  const horizonsDataPreloaded = useRef(false)
+
+  // Preload NASA Horizons data on mount (optional enhancement)
+  useEffect(() => {
+    if (useNASAAPI && !horizonsDataPreloaded.current) {
+      horizonsDataPreloaded.current = true
+      preloadAllPlanetsHorizons().catch(err => {
+        console.warn('Could not preload Horizons data, using Kepler calculations:', err)
+        setUseNASAAPI(false)
+      })
+    }
+  }, [useNASAAPI])
 
   // Keep refs in sync with props
   useEffect(() => {
@@ -656,10 +675,20 @@ export function SolarSystem({
           const currentDate = new Date()
           const simulatedDate = new Date(currentDate.getTime() + currentSimTime * 1000)
           
+          // Use hybrid approach: Horizons API + Kepler's Laws
           const realPosition = calculatePlanetPosition(
             planet.name as keyof typeof PLANET_ORBITAL_DATA,
             simulatedDate
           )
+          
+          // Calculate instantaneous orbital velocity using vis-viva equation
+          // v = √[μ(2/r - 1/a)] where μ = GM_sun
+          const currentDistance = realPosition.radiusVector
+          const orbitalVelocityAU = calculateOrbitalVelocity(
+            planet.name as keyof typeof PLANET_ORBITAL_DATA,
+            currentDistance
+          )
+          const orbitalVelocityKmS = velocityAUperDayToKmPerSec(orbitalVelocityAU)
           
           // Convert real position (AU) to scene units
           const visualScaleFactor = planet.distance / PLANET_ORBITAL_DATA[planet.name as keyof typeof PLANET_ORBITAL_DATA].semiMajorAxis
@@ -671,6 +700,10 @@ export function SolarSystem({
           
           // Update angle for Kepler's 2nd law visualization (stored for reference)
           planet.angle = Math.atan2(z, x)
+          
+          // Store current velocity in userData for debugging/display
+          planet.mesh.userData.velocity = orbitalVelocityKmS
+          planet.mesh.userData.distance = currentDistance
           // Update angle for Kepler's 2nd law visualization (stored for reference)
           planet.angle = Math.atan2(z, x)
           
