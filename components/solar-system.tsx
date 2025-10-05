@@ -6,6 +6,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import gsap from "gsap"
 import { calculateOrbitalPosition, type CelestialBody } from "@/lib/orbital-mechanics"
 import { type ScaleMode, getRealisticPlanetSize, getRealisticDistance, calculateLightIntensity, SCALE_MODES } from "@/lib/realistic-mode"
+import { calculatePlanetPosition, calculateMeanAnomaly, PLANET_ORBITAL_DATA } from "@/lib/planet-positions"
 
 interface SolarSystemProps {
   onPlanetHover?: (planet: string | null) => void
@@ -340,19 +341,86 @@ export function SolarSystem({
       scene.add(glow)
     })
 
-    // Real orbital periods (Earth days) and eccentricity from NASA
-    // Eccentricity: 0 = perfect circle, >0 = ellipse (how oval-shaped)
-    // Using Kepler's 3rd Law: T² ∝ a³ (orbital period squared is proportional to semi-major axis cubed)
+    // Real orbital periods (Earth days) and eccentricity from NASA Horizons
+    // Using accurate orbital data for current epoch
     const planetsData = [
-      { name: "Mercury", distance: 15, size: 0.8, color: 0x8c7853, eccentricity: 0.206, emissive: 0x3d3428 },
-      { name: "Venus", distance: 20, size: 1.2, color: 0xffc649, eccentricity: 0.007, emissive: 0x664d1e },
-      { name: "Earth", distance: 28, size: 1.3, color: 0x4a90e2, eccentricity: 0.017, emissive: 0x1a3a5a },
-      { name: "Mars", distance: 35, size: 1, color: 0xe27b58, eccentricity: 0.093, emissive: 0x5a2f22 },
-      { name: "Jupiter", distance: 50, size: 3, color: 0xc88b3a, eccentricity: 0.048, emissive: 0x4d3617 },
-      { name: "Saturn", distance: 65, size: 2.5, color: 0xfad5a5, eccentricity: 0.056, emissive: 0x645542 },
-      { name: "Uranus", distance: 78, size: 2, color: 0x4fd0e7, eccentricity: 0.046, emissive: 0x1f535c },
-      { name: "Neptune", distance: 88, size: 1.9, color: 0x4166f5, eccentricity: 0.010, emissive: 0x1a2962 },
+      { 
+        name: "Mercury", 
+        distance: 15, // visual distance
+        size: 0.8, 
+        color: 0x8c7853, 
+        eccentricity: PLANET_ORBITAL_DATA.Mercury.eccentricity,
+        emissive: 0x3d3428,
+        actualDistance: PLANET_ORBITAL_DATA.Mercury.semiMajorAxis
+      },
+      { 
+        name: "Venus", 
+        distance: 20, 
+        size: 1.2, 
+        color: 0xffc649, 
+        eccentricity: PLANET_ORBITAL_DATA.Venus.eccentricity,
+        emissive: 0x664d1e,
+        actualDistance: PLANET_ORBITAL_DATA.Venus.semiMajorAxis
+      },
+      { 
+        name: "Earth", 
+        distance: 28, 
+        size: 1.3, 
+        color: 0x4a90e2, 
+        eccentricity: PLANET_ORBITAL_DATA.Earth.eccentricity,
+        emissive: 0x1a3a5a,
+        actualDistance: PLANET_ORBITAL_DATA.Earth.semiMajorAxis
+      },
+      { 
+        name: "Mars", 
+        distance: 35, 
+        size: 1, 
+        color: 0xe27b58, 
+        eccentricity: PLANET_ORBITAL_DATA.Mars.eccentricity,
+        emissive: 0x5a2f22,
+        actualDistance: PLANET_ORBITAL_DATA.Mars.semiMajorAxis
+      },
+      { 
+        name: "Jupiter", 
+        distance: 50, 
+        size: 3, 
+        color: 0xc88b3a, 
+        eccentricity: PLANET_ORBITAL_DATA.Jupiter.eccentricity,
+        emissive: 0x4d3617,
+        actualDistance: PLANET_ORBITAL_DATA.Jupiter.semiMajorAxis
+      },
+      { 
+        name: "Saturn", 
+        distance: 65, 
+        size: 2.5, 
+        color: 0xfad5a5, 
+        eccentricity: PLANET_ORBITAL_DATA.Saturn.eccentricity,
+        emissive: 0x645542,
+        actualDistance: PLANET_ORBITAL_DATA.Saturn.semiMajorAxis
+      },
+      { 
+        name: "Uranus", 
+        distance: 78, 
+        size: 2, 
+        color: 0x4fd0e7, 
+        eccentricity: PLANET_ORBITAL_DATA.Uranus.eccentricity,
+        emissive: 0x1f535c,
+        actualDistance: PLANET_ORBITAL_DATA.Uranus.semiMajorAxis
+      },
+      { 
+        name: "Neptune", 
+        distance: 88, 
+        size: 1.9, 
+        color: 0x4166f5, 
+        eccentricity: PLANET_ORBITAL_DATA.Neptune.eccentricity,
+        emissive: 0x1a2962,
+        actualDistance: PLANET_ORBITAL_DATA.Neptune.semiMajorAxis
+      },
     ]
+
+    // Calculate real positions from NASA Horizons data
+    const currentDate = new Date()
+    console.log(`🌍 Calculating real planetary positions for: ${currentDate.toISOString()}`)
 
     // Apply realistic scaling based on mode
     const scaledPlanetsData = planetsData.map(planet => ({
@@ -536,10 +604,27 @@ export function SolarSystem({
       // Normalize to Earth's orbit (distance = 28)
       const meanAngularVelocity = 0.02 * Math.pow(28 / planetData.distance, 1.5)
 
+      // Calculate real position from NASA Horizons data
+      const realPosition = calculatePlanetPosition(
+        planetData.name as keyof typeof PLANET_ORBITAL_DATA,
+        currentDate
+      )
+      
+      // Convert real position (in AU) to visualization position
+      const visualScaleFactor = planetData.distance / planetData.actualDistance
+      const initialAngle = Math.atan2(-realPosition.y, realPosition.x) // Note coordinate transformation
+      
+      console.log(`  ${planetData.name}:`, {
+        realPosition: `(${realPosition.x.toFixed(3)}, ${realPosition.y.toFixed(3)}, ${realPosition.z.toFixed(3)}) AU`,
+        distance: `${realPosition.radiusVector.toFixed(3)} AU`,
+        trueAnomaly: `${realPosition.trueAnomaly.toFixed(1)}°`,
+        visualAngle: `${(initialAngle * 180 / Math.PI).toFixed(1)}°`
+      })
+
       planets.push({
         mesh: planet,
         orbit,
-        angle: Math.random() * Math.PI * 2,
+        angle: initialAngle, // Use real position from NASA data
         meanAngularVelocity,  // Kepler's 3rd Law
         distance: planetData.distance,
         eccentricity: planetData.eccentricity,
@@ -566,22 +651,28 @@ export function SolarSystem({
         sun.scale.set(pulseScale, pulseScale, pulseScale)
 
         planets.forEach((planet) => {
-          // Kepler's 2nd Law: Equal areas in equal times
-          // Angular velocity varies with distance: dθ/dt ∝ 1/r²
-          // Calculate current distance from sun
-          const a = planet.distance  // semi-major axis
-          const e = planet.eccentricity
-          const theta = planet.angle
-          const r = (a * (1 - e * e)) / (1 + e * Math.cos(theta))
+          // Calculate real position from NASA data at current simulation time
+          // Convert simulationTime (seconds) to Date
+          const currentDate = new Date()
+          const simulatedDate = new Date(currentDate.getTime() + currentSimTime * 1000)
           
-          // Kepler's 2nd Law: angular velocity = mean_angular_velocity × (a/r)²
-          // This makes planets move FASTER when close to sun, SLOWER when far
-          const angularVelocity = planet.meanAngularVelocity * Math.pow(a / r, 2)
-          planet.angle = currentSimTime * angularVelocity * 0.01
+          const realPosition = calculatePlanetPosition(
+            planet.name as keyof typeof PLANET_ORBITAL_DATA,
+            simulatedDate
+          )
           
-          // Update position on elliptical orbit (Kepler's 1st Law)
-          planet.mesh.position.x = r * Math.cos(theta)
-          planet.mesh.position.z = r * Math.sin(theta)
+          // Convert real position (AU) to scene units
+          const visualScaleFactor = planet.distance / PLANET_ORBITAL_DATA[planet.name as keyof typeof PLANET_ORBITAL_DATA].semiMajorAxis
+          const x = realPosition.x * visualScaleFactor
+          const z = -realPosition.y * visualScaleFactor // Note coordinate swap for Three.js
+          
+          planet.mesh.position.x = x
+          planet.mesh.position.z = z
+          
+          // Update angle for Kepler's 2nd law visualization (stored for reference)
+          planet.angle = Math.atan2(z, x)
+          // Update angle for Kepler's 2nd law visualization (stored for reference)
+          planet.angle = Math.atan2(z, x)
           
           // Realistic rotation speeds (actual real-world periods) - synced with simulationTime
           // Rotation speeds in rad/s based on actual planetary rotation periods
