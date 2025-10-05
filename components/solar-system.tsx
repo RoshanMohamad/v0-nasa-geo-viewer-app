@@ -5,6 +5,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import gsap from "gsap"
 import { calculateOrbitalPosition, type CelestialBody } from "@/lib/orbital-mechanics"
+import { type ScaleMode, getRealisticPlanetSize, getRealisticDistance, calculateLightIntensity, SCALE_MODES } from "@/lib/realistic-mode"
 
 interface SolarSystemProps {
   onPlanetHover?: (planet: string | null) => void
@@ -30,6 +31,7 @@ interface SolarSystemProps {
   customObjects?: CelestialBody[]  // New: custom asteroids/comets/objects
   simulationTime?: number  // New: simulation time for orbital calculations
   onObjectClick?: (object: CelestialBody) => void  // New: handle custom object clicks
+  scaleMode?: ScaleMode  // New: realistic mode toggle
 }
 
 interface Asteroid {
@@ -54,6 +56,7 @@ export function SolarSystem({
   customObjects = [],
   simulationTime = 0,
   onObjectClick,
+  scaleMode = 'visual',
 }: SolarSystemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -87,6 +90,52 @@ export function SolarSystem({
   useEffect(() => {
     isPausedRef.current = isPaused
   }, [isPaused])
+  
+  // Adjust camera when scale mode changes
+  useEffect(() => {
+    if (!cameraRef.current || !controlsRef.current) return
+    
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    
+    console.log(`🔄 Scale mode changed to: ${scaleMode}`)
+    
+    // Adjust max distance
+    if (scaleMode === 'realistic') {
+      controls.maxDistance = 2500
+      gsap.to(camera.position, {
+        x: 0,
+        y: 300,
+        z: 800,
+        duration: 2,
+        ease: 'power2.inOut',
+        onUpdate: () => { controls.update() },
+        onComplete: () => console.log('📷 Camera adjusted for Realistic Mode')
+      })
+    } else if (scaleMode === 'hybrid') {
+      controls.maxDistance = 1200
+      gsap.to(camera.position, {
+        x: 0,
+        y: 150,
+        z: 300,
+        duration: 2,
+        ease: 'power2.inOut',
+        onUpdate: () => { controls.update() },
+        onComplete: () => console.log('📷 Camera adjusted for Hybrid Mode')
+      })
+    } else {
+      controls.maxDistance = 800
+      gsap.to(camera.position, {
+        x: 0,
+        y: 50,
+        z: 100,
+        duration: 2,
+        ease: 'power2.inOut',
+        onUpdate: () => { controls.update() },
+        onComplete: () => console.log('📷 Camera adjusted for Visual Mode')
+      })
+    }
+  }, [scaleMode])
 
   const G = 0.5
   const sunMass = 1000
@@ -168,7 +217,20 @@ export function SolarSystem({
     
     // STEP 2: Set zoom distance range (step-by-step accessibility)
     controls.minDistance = 0.5  // EXTREME close-up capability
-    controls.maxDistance = 800  // Wider overview range
+    controls.maxDistance = scaleMode === 'realistic' ? 2500 : scaleMode === 'hybrid' ? 1200 : 800  // Adjust based on mode
+    controls.screenSpacePanning = false
+    
+    // STEP 2b: Adjust initial camera position based on scale mode
+    if (scaleMode === 'realistic') {
+      camera.position.set(0, 300, 800)
+      console.log('📷 Camera positioned for Realistic Mode (far view)')
+    } else if (scaleMode === 'hybrid') {
+      camera.position.set(0, 150, 300)
+      console.log('📷 Camera positioned for Hybrid Mode (medium view)')
+    } else {
+      camera.position.set(0, 50, 100)
+      console.log('📷 Camera positioned for Visual Mode (default view)')
+    }
     
     // STEP 3: Configure smooth zoom behavior
     controls.zoomSpeed = 1.0  // Standard speed for smooth zooming
@@ -252,7 +314,7 @@ export function SolarSystem({
     scene.add(starfield)
 
     // Realistic Sun with 8K texture and high detail geometry
-    const sunGeometry = new THREE.SphereGeometry(5, 256, 256)  // Ultra-high detail for close-up viewing
+    const sunGeometry = new THREE.SphereGeometry(SCALE_MODES[scaleMode].sunSize, 256, 256)  // Ultra-high detail for close-up viewing
     const sunTexture = enhanceTexture(textureLoader.load('/textures/8k_sun.jpg'))
     const sunMaterial = new THREE.MeshBasicMaterial({
       map: sunTexture,
@@ -261,9 +323,9 @@ export function SolarSystem({
     scene.add(sun)
 
     const glowLayers = [
-      { size: 6.5, opacity: 0.4, color: 0xfdb813 },
-      { size: 8, opacity: 0.2, color: 0xff9500 },
-      { size: 10, opacity: 0.1, color: 0xff6b00 },
+      { size: SCALE_MODES[scaleMode].sunSize * 1.3, opacity: 0.4, color: 0xfdb813 },
+      { size: SCALE_MODES[scaleMode].sunSize * 1.6, opacity: 0.2, color: 0xff9500 },
+      { size: SCALE_MODES[scaleMode].sunSize * 2.0, opacity: 0.1, color: 0xff6b00 },
     ]
 
     glowLayers.forEach((layer) => {
@@ -292,6 +354,22 @@ export function SolarSystem({
       { name: "Neptune", distance: 88, size: 1.9, color: 0x4166f5, eccentricity: 0.010, emissive: 0x1a2962 },
     ]
 
+    // Apply realistic scaling based on mode
+    const scaledPlanetsData = planetsData.map(planet => ({
+      ...planet,
+      size: getRealisticPlanetSize(planet.name, scaleMode, planet.size),
+      distance: getRealisticDistance(planet.name, scaleMode, planet.distance),
+    }))
+    
+    // Log scale info for debugging
+    console.log(`🌌 Scale Mode: ${scaleMode}`, SCALE_MODES[scaleMode])
+    if (scaleMode !== 'visual') {
+      console.log('📊 Scaled Planets:')
+      scaledPlanetsData.forEach(p => {
+        console.log(`  ${p.name}: size=${p.size.toFixed(3)}, distance=${p.distance.toFixed(1)}`)
+      })
+    }
+
     const planets: Array<{
       mesh: THREE.Mesh
       orbit: THREE.Line
@@ -302,7 +380,7 @@ export function SolarSystem({
       name: string
     }> = []
 
-    planetsData.forEach((planetData) => {
+    scaledPlanetsData.forEach((planetData) => {
       // Higher detail geometry for better zoom quality (128 segments instead of 64)
       const geometry = new THREE.SphereGeometry(planetData.size, 256, 256)  // Ultra-high detail (65,536 triangles!)
       let material: THREE.MeshStandardMaterial
@@ -376,7 +454,20 @@ export function SolarSystem({
       }
 
       const planet = new THREE.Mesh(geometry, material)
+      planet.castShadow = true
+      planet.receiveShadow = true
       scene.add(planet)
+      
+      // Apply realistic lighting if enabled
+      const config = SCALE_MODES[scaleMode]
+      if (config.lightingRealistic) {
+        const lightIntensity = calculateLightIntensity(planetData.distance, scaleMode)
+        // Adjust material emissive intensity based on distance
+        if (material.emissive) {
+          material.emissiveIntensity = lightIntensity * 0.5
+        }
+        console.log(`💡 ${planetData.name} light intensity: ${lightIntensity.toFixed(3)} (distance: ${planetData.distance.toFixed(1)})`)
+      }
 
       // Add Earth's atmosphere and Moon
       if (planetData.name === "Earth") {
@@ -552,15 +643,15 @@ export function SolarSystem({
           ) as THREE.Mesh | undefined
 
           if (!customMesh) {
-            // Create new mesh for custom object with enhanced visuals
+            // Create new mesh for custom object with ULTRA-HIGH QUALITY (same as planets!)
             const size = Math.max(0.5, obj.radius / 1000) // Convert km to scene units, minimum 0.5 for visibility
             
-            // Create geometry based on object type for realistic appearance
+            // Create geometry based on object type - PLANET-LEVEL QUALITY (256x256 segments)
             let geometry: THREE.BufferGeometry
             
             if (obj.type === 'asteroid') {
-              // Irregular asteroid shape using deformed icosahedron
-              geometry = new THREE.IcosahedronGeometry(size, 2)
+              // Irregular asteroid shape using deformed icosahedron with HIGH DETAIL
+              geometry = new THREE.IcosahedronGeometry(size, 4) // Increased from 2 to 4 (16x more triangles!)
               // Add random deformation for irregular surface
               const positions = geometry.attributes.position
               for (let i = 0; i < positions.count; i++) {
@@ -575,15 +666,15 @@ export function SolarSystem({
               }
               geometry.computeVertexNormals() // Recalculate normals for lighting
             } else if (obj.type === 'comet') {
-              // Slightly elongated shape for comet nucleus
-              geometry = new THREE.SphereGeometry(size, 32, 32)
+              // Slightly elongated shape for comet nucleus - ULTRA-HIGH DETAIL
+              geometry = new THREE.SphereGeometry(size, 128, 128) // Upgraded from 32 to 128!
               geometry.scale(1.2, 0.8, 1.0) // Elongated along X-axis
             } else if (obj.type === 'dwarf-planet' || obj.type === 'trans-neptunian') {
-              // High-detail sphere for dwarf planets
-              geometry = new THREE.SphereGeometry(size, 64, 64)
+              // PLANET-LEVEL detail sphere for dwarf planets (same as real planets!)
+              geometry = new THREE.SphereGeometry(size, 256, 256) // ULTRA-HIGH DETAIL (65,536 triangles!)
             } else {
-              // Default sphere
-              geometry = new THREE.SphereGeometry(size, 32, 32)
+              // Default sphere with high detail
+              geometry = new THREE.SphereGeometry(size, 128, 128) // Upgraded from 32 to 128!
             }
             
             // Color based on composition (use object's color if available)

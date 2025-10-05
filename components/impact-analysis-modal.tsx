@@ -102,7 +102,7 @@ export function ImpactAnalysisModal({ asteroid, analysis, onClose }: ImpactAnaly
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Classification</p>
-                    <p className="text-lg font-semibold text-foreground">{analysis.classification}</p>
+                    <p className="text-lg font-semibold text-foreground">{analysis.classification || 'Unknown'}</p>
                   </div>
                 </div>
               </div>
@@ -110,7 +110,7 @@ export function ImpactAnalysisModal({ asteroid, analysis, onClose }: ImpactAnaly
               {/* Estimated Damage */}
               <div>
                 <h3 className="text-lg font-semibold mb-3">Estimated Damage</h3>
-                <p className="text-muted-foreground">{analysis.estimatedDamage}</p>
+                <p className="text-muted-foreground">{analysis.estimatedDamage || 'Assessment pending'}</p>
               </div>
 
               {/* Object Details */}
@@ -236,16 +236,20 @@ export function ImpactAnalysisModal({ asteroid, analysis, onClose }: ImpactAnaly
                 <p className="text-sm text-muted-foreground mb-3">
                   Simulated strike zones based on orbital intersection:
                 </p>
-                <div className="grid grid-cols-5 gap-2">
-                  {analysis.impactZones.map((zone, index) => (
-                    <Card key={index} className="p-3 bg-muted/30 text-center">
-                      <p className="text-xs text-muted-foreground">Zone {index + 1}</p>
-                      <p className="text-xs font-mono mt-1">
-                        {zone.lat.toFixed(2)}°, {zone.lng.toFixed(2)}°
-                      </p>
-                    </Card>
-                  ))}
-                </div>
+                {analysis.impactZones && analysis.impactZones.length > 0 ? (
+                  <div className="grid grid-cols-5 gap-2">
+                    {analysis.impactZones.map((zone, index) => (
+                      <Card key={index} className="p-3 bg-muted/30 text-center">
+                        <p className="text-xs text-muted-foreground">Zone {index + 1}</p>
+                        <p className="text-xs font-mono mt-1">
+                          {zone.lat.toFixed(2)}°, {zone.lng.toFixed(2)}°
+                        </p>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">No impact zones calculated</p>
+                )}
               </div>
             </TabsContent>
 
@@ -290,8 +294,8 @@ export function ImpactAnalysisModal({ asteroid, analysis, onClose }: ImpactAnaly
                 <h4 className="font-semibold mb-2">Current Assessment</h4>
                 <p className="text-sm text-muted-foreground">
                   {asteroid.name} has an estimated impact energy of{' '}
-                  <span className="font-bold text-foreground">{analysis.kineticEnergyMT.toFixed(2)} MT</span>.{' '}
-                  {analysis.classification}
+                  <span className="font-bold text-foreground">{analysis.kineticEnergyMT?.toFixed(2) || '0.00'} MT</span>.{' '}
+                  {analysis.classification || 'Classification pending'}
                 </p>
               </div>
             </TabsContent>

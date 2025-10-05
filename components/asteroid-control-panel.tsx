@@ -4,7 +4,7 @@
  * 🎮 ASTEROID CONTROL PANEL - Add and manage custom asteroids
  * 
  * Features:
- * - Add random asteroids
+ * - Add random asteroids with Kepler orbital mechanics
  * - Add targeted asteroids (toward Earth or other planets)
  * - Add custom orbital objects (asteroids, comets, dwarf planets)
  * - List all active asteroids
@@ -12,6 +12,7 @@
  * - View impact predictions
  * - Adjust orbital parameters
  * - NASA real asteroid integration
+ * - Three.js Kepler orbit calculations
  */
 
 import { useState } from "react"
@@ -24,6 +25,55 @@ import { CustomAsteroid, generateRandomAsteroid } from "@/lib/asteroid-system"
 import { Rocket, Trash2, Target, Zap, Sparkles, AlertTriangle, Atom, Database, Eye, Palette, Info } from "lucide-react"
 import type { CelestialBody } from "@/lib/orbital-mechanics"
 import { ASTEROID_PRESETS, CUSTOM_PRESETS } from "@/lib/nasa-horizons-api"
+
+/**
+ * Convert simple asteroid parameters to full CelestialBody with Kepler orbital elements
+ * This enables proper Three.js Kepler orbit calculations in the solar system
+ * EXPORTED for external use
+ */
+export function createCustomAsteroidObject(params: {
+  name?: string
+  color?: string
+  radius?: number
+  distanceAU?: number
+  eccentricity?: number
+  perihelionArg?: number
+  periodYears?: number
+  inclination?: number
+  type?: 'asteroid' | 'comet'
+}): CelestialBody {
+  const id = `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  
+  // Default values matching your standalone component
+  const distanceAU = params.distanceAU || (2.0 + Math.random() * 1.5) // 2-3.5 AU (asteroid belt range)
+  const eccentricity = Math.min(0.99, params.eccentricity || Math.random() * 0.4) // 0-0.4 eccentricity
+  const inclination = params.inclination || Math.random() * 20 // 0-20 degrees inclination
+  const perihelionArg = params.perihelionArg || Math.random() * 360
+  const meanAnomaly = Math.random() * 360 // Random starting position in orbit
+  const longitudeOfAscendingNode = Math.random() * 360
+  
+  // Calculate orbital period using Kepler's 3rd Law: T² = a³ (for AU and years)
+  const periodYears = params.periodYears || Math.sqrt(Math.pow(distanceAU, 3))
+  
+  return {
+    id,
+    name: params.name || `Custom-${Date.now()}`,
+    type: params.type || 'asteroid',
+    radius: params.radius || 5, // km
+    mass: 1e12, // kg (typical small asteroid)
+    color: params.color || '#ff6b6b',
+    composition: params.type === 'comet' ? 'icy' : 'rocky',
+    orbitalElements: {
+      semiMajorAxis: distanceAU,
+      eccentricity,
+      inclination,
+      longitudeOfAscendingNode,
+      argumentOfPerihelion: perihelionArg,
+      meanAnomaly,
+      period: periodYears,
+    },
+  }
+}
 
 interface AsteroidControlPanelProps {
   customAsteroids: CustomAsteroid[]
@@ -224,6 +274,104 @@ export function AsteroidControlPanel({
 
         {/* QUICK ADD TAB (Original) */}
         <TabsContent value="quick" className="space-y-4">
+          {/* NEW: Quick Kepler Orbit Asteroid Generator */}
+          <div className="border border-purple-500/30 rounded-lg p-3 bg-purple-900/20">
+            <h3 className="text-sm font-semibold text-purple-200 mb-2 flex items-center gap-2">
+              <Atom className="w-4 h-4" />
+              Quick Add with Kepler Orbits
+            </h3>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => {
+                  if (!onAddCustomObject) return
+                  const asteroid = createCustomAsteroidObject({
+                    name: `Asteroid-${Date.now()}`,
+                    color: '#ff6b6b',
+                    radius: 5,
+                    distanceAU: 2.2 + Math.random() * 0.8, // Main asteroid belt (2.2-3.0 AU)
+                    eccentricity: Math.random() * 0.3,
+                    inclination: Math.random() * 15,
+                    type: 'asteroid'
+                  })
+                  onAddCustomObject(asteroid)
+                }}
+                className="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-xs"
+                size="sm"
+              >
+                <Sparkles className="w-3 h-3 mr-1" />
+                Belt Asteroid
+              </Button>
+
+              <Button
+                onClick={() => {
+                  if (!onAddCustomObject) return
+                  const comet = createCustomAsteroidObject({
+                    name: `Comet-${Date.now()}`,
+                    color: '#66ccff',
+                    radius: 3,
+                    distanceAU: 5 + Math.random() * 15, // Distant orbit (5-20 AU)
+                    eccentricity: 0.6 + Math.random() * 0.35, // High eccentricity (0.6-0.95)
+                    inclination: Math.random() * 60, // Can be highly inclined
+                    type: 'comet'
+                  })
+                  onAddCustomObject(comet)
+                }}
+                className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-xs"
+                size="sm"
+              >
+                <Zap className="w-3 h-3 mr-1" />
+                Icy Comet
+              </Button>
+
+              <Button
+                onClick={() => {
+                  if (!onAddCustomObject) return
+                  const neo = createCustomAsteroidObject({
+                    name: `NEO-${Date.now()}`,
+                    color: '#ff3366',
+                    radius: 8,
+                    distanceAU: 0.8 + Math.random() * 0.7, // Near Earth (0.8-1.5 AU)
+                    eccentricity: 0.3 + Math.random() * 0.5, // Moderate to high eccentricity
+                    inclination: Math.random() * 30,
+                    type: 'asteroid'
+                  })
+                  onAddCustomObject(neo)
+                }}
+                className="w-full bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-xs"
+                size="sm"
+              >
+                <Target className="w-3 h-3 mr-1" />
+                Near Earth
+              </Button>
+
+              <Button
+                onClick={() => {
+                  if (!onAddCustomObject) return
+                  const tno = createCustomAsteroidObject({
+                    name: `TNO-${Date.now()}`,
+                    color: '#9966ff',
+                    radius: 12,
+                    distanceAU: 30 + Math.random() * 20, // Trans-Neptunian (30-50 AU)
+                    eccentricity: 0.1 + Math.random() * 0.3,
+                    inclination: Math.random() * 40,
+                    type: 'asteroid'
+                  })
+                  onAddCustomObject(tno)
+                }}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-xs"
+                size="sm"
+              >
+                <Database className="w-3 h-3 mr-1" />
+                Trans-Neptunian
+              </Button>
+            </div>
+
+            <div className="text-xs text-purple-300/70 mt-2">
+              ✨ Asteroids with realistic Three.js Kepler orbit calculations!
+            </div>
+          </div>
+
           <div className="space-y-4">
             <div>
               <label className="text-sm text-purple-200 mb-2 block">

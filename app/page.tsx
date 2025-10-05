@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, useRef } from "react"
 import { SolarSystem } from "@/components/solar-system"
 import { ControlPanel } from "@/components/control-panel"
 import { PlanetSelector } from "@/components/planet-selector"
-import { CustomObjectManager } from "@/components/custom-object-manager"
 import { AsteroidControlPanel } from "@/components/asteroid-control-panel"
 import { ImpactAnalysisModal } from "@/components/impact-analysis-modal"
 import { ImpactVisualization } from "@/components/impact-visualization"
@@ -13,9 +12,11 @@ import { ObjectDetailsPanel } from "@/components/object-details-panel"
 import { OrbitPathViewer } from "@/components/orbit-path-viewer"
 import { fetchRealAsteroid } from "@/lib/nasa-horizons-api"
 import { SimulationTimeControls } from "@/components/simulation-time-controls"
+import { RealisticModeToggle } from "@/components/realistic-mode-toggle"
+import { type ScaleMode, type TimeScale, TIME_SCALES } from "@/lib/realistic-mode"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Rocket, Settings, Info, AlertTriangle, Target, Atom, ExternalLink } from "lucide-react"
+import { Rocket, Settings, Info, AlertTriangle, Target, ExternalLink, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { calculateImpact, type ImpactResults } from "@/lib/impact-calculator"
 import { calculateImpactProbability, type CelestialBody, type ImpactAnalysis } from "@/lib/orbital-mechanics"
@@ -44,9 +45,11 @@ export default function HomePage() {
   // Custom Objects & NASA Integration
   const [customObjects, setCustomObjects] = useState<CelestialBody[]>([])
   const [customAsteroids, setCustomAsteroids] = useState<CustomAsteroid[]>([])
-  const [isObjectManagerOpen, setIsObjectManagerOpen] = useState(false)
-  const [isAsteroidPanelOpen, setIsAsteroidPanelOpen] = useState(false)
   const [isImpactAnalysisOpen, setIsImpactAnalysisOpen] = useState(false)
+  
+  // Panel visibility toggles
+  const [isLeftPanelVisible, setIsLeftPanelVisible] = useState(true)
+  const [isRightPanelVisible, setIsRightPanelVisible] = useState(true)
   const [isImpactVisualizationOpen, setIsImpactVisualizationOpen] = useState(false)
   const [isAdvancedImpactOpen, setIsAdvancedImpactOpen] = useState(false)
   const [isObjectDetailsOpen, setIsObjectDetailsOpen] = useState(false)
@@ -62,6 +65,10 @@ export default function HomePage() {
   const [currentSimulationDate, setCurrentSimulationDate] = useState(new Date())
   const elapsedSecondsRef = useRef(0)
   const lastUpdateTimeRef = useRef(Date.now())
+  
+  // Realistic Mode State
+  const [scaleMode, setScaleMode] = useState<ScaleMode>('visual')
+  const [timeScale, setTimeScale] = useState<TimeScale>('veryFast')
 
   // Update simulation time based on speed
   useEffect(() => {
@@ -91,6 +98,17 @@ export default function HomePage() {
     setCurrentSimulationDate(new Date(simulationStartDate))
     lastUpdateTimeRef.current = Date.now()
   }, [simulationStartDate])
+
+  const handleTimeScaleChange = useCallback((scale: TimeScale) => {
+    setTimeScale(scale)
+    setTimeSpeed(TIME_SCALES[scale].multiplier)
+  }, [])
+
+  const handleScaleModeChange = useCallback((mode: ScaleMode) => {
+    setScaleMode(mode)
+    // Optionally reset camera position when switching modes
+    console.log(`🌌 Scale mode changed to: ${mode}`)
+  }, [])
 
   const handleStartSimulation = () => {
     setSimulationActive(true)
@@ -276,15 +294,6 @@ export default function HomePage() {
               <h1 className="text-2xl font-bold text-foreground">Solar System & Asteroid Impact Simulator</h1>
             </div>
             <nav className="flex items-center gap-2">
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setIsObjectManagerOpen(true)}
-                className="hover:bg-primary/10"
-              >
-                <Atom className="w-4 h-4 mr-2" />
-                Custom Objects
-              </Button>
               <Button variant="ghost" size="sm">
                 <Info className="w-4 h-4 mr-2" />
                 About
@@ -318,26 +327,62 @@ export default function HomePage() {
             customObjects={customObjects}
             simulationTime={simulationTime}
             onObjectClick={handleAnalyzeImpact}
+            scaleMode={scaleMode}
           />
         </div>
 
-        {/* Control Panel */}
-        <div className="absolute top-6 left-6 z-10 space-y-4">
-          <ControlPanel
-            asteroidSize={asteroidSize}
-            asteroidSpeed={asteroidSpeed}
-            asteroidAngle={asteroidAngle}
-            onSizeChange={setAsteroidSize}
-            onSpeedChange={setAsteroidSpeed}
-            onAngleChange={setAsteroidAngle}
-            onStart={handleStartSimulation}
-            onReset={handleReset}
-            simulationActive={simulationActive}
-            isPaused={isPaused}
-            onPauseToggle={handlePauseToggle}
-            startPosition={startPosition}
-            onStartPositionChange={setStartPosition}
-            onSpawnAsteroid={handleSpawnAsteroid}
+        {/* Left Side Panel - Asteroid Configuration */}
+        <div 
+          className={`absolute top-6 left-6 z-10 transition-transform duration-300 ${
+            isLeftPanelVisible ? 'translate-x-0' : '-translate-x-[440px]'
+          }`}
+        >
+          <div className="w-[420px] space-y-4">
+            {/* Asteroid Control Panel */}
+            <AsteroidControlPanel
+              customAsteroids={customAsteroids}
+              onAddAsteroid={handleAddAsteroid}
+              onRemoveAsteroid={handleRemoveAsteroid}
+              customObjects={customObjects}
+              onAddCustomObject={handleAddCustomObject}
+              onRemoveCustomObject={handleRemoveCustomObject}
+              onAddRealAsteroid={handleAddRealAsteroid}
+              onAnalyzeImpact={handleAnalyzeImpact}
+              onViewObject={handleViewObject}
+            />
+          </div>
+        </div>
+
+        {/* Left Panel Toggle Button */}
+        <Button
+          onClick={() => setIsLeftPanelVisible(!isLeftPanelVisible)}
+          size="icon"
+          variant="outline"
+          className={`absolute top-6 z-20 transition-all duration-300 bg-black/60 backdrop-blur-md border-purple-500/30 hover:bg-purple-500/20 ${
+            isLeftPanelVisible ? 'left-[452px]' : 'left-6'
+          }`}
+          title={isLeftPanelVisible ? "Hide Asteroid Panel" : "Show Asteroid Panel"}
+        >
+          {isLeftPanelVisible ? (
+            <ChevronLeft className="w-4 h-4 text-purple-300" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-purple-300" />
+          )}
+        </Button>
+
+        {/* Right Side Panel - Controls & Info */}
+        <div 
+          className={`absolute top-6 right-6 z-10 space-y-4 transition-transform duration-300 ${
+            isRightPanelVisible ? 'translate-x-0' : 'translate-x-[440px]'
+          }`}
+        >
+          {/* Realistic Mode Toggle */}
+          <RealisticModeToggle
+            currentMode={scaleMode}
+            onModeChange={handleScaleModeChange}
+            currentTimeScale={timeScale}
+            onTimeScaleChange={handleTimeScaleChange}
+            showTimeControls={false}
           />
 
           {/* Planet Focus Selector with GSAP Camera Animation */}
@@ -499,7 +544,11 @@ export default function HomePage() {
         )}
 
         {/* Stats Panel */}
-        <div className="absolute bottom-6 right-6 z-10">
+        <div 
+          className={`absolute bottom-6 right-6 z-10 transition-transform duration-300 ${
+            isRightPanelVisible ? 'translate-x-0' : 'translate-x-[440px]'
+          }`}
+        >
           <Card className="p-4 bg-card/90 backdrop-blur-sm border-border/50">
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
@@ -526,6 +575,23 @@ export default function HomePage() {
           </Card>
         </div>
 
+        {/* Right Panel Toggle Button */}
+        <Button
+          onClick={() => setIsRightPanelVisible(!isRightPanelVisible)}
+          size="icon"
+          variant="outline"
+          className={`absolute bottom-6 z-20 transition-all duration-300 bg-black/60 backdrop-blur-md border-purple-500/30 hover:bg-purple-500/20 ${
+            isRightPanelVisible ? 'right-[452px]' : 'right-6'
+          }`}
+          title={isRightPanelVisible ? "Hide Info Panel" : "Show Info Panel"}
+        >
+          {isRightPanelVisible ? (
+            <ChevronRight className="w-4 h-4 text-purple-300" />
+          ) : (
+            <ChevronLeft className="w-4 h-4 text-purple-300" />
+          )}
+        </Button>
+
         {/* Orbit Path Comparison Viewer */}
         <OrbitPathViewer
           customObjects={customObjects}
@@ -536,34 +602,12 @@ export default function HomePage() {
         />
       </main>
 
-      {/* Custom Object Manager Modal */}
-      {isObjectManagerOpen && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute -top-12 right-0 text-foreground hover:text-primary"
-              onClick={() => setIsObjectManagerOpen(false)}
-            >
-              ✕
-            </Button>
-            <CustomObjectManager
-              onAddObject={handleAddCustomObject}
-              onRemoveObject={handleRemoveCustomObject}
-              customObjects={customObjects}
-              onAddRealAsteroid={handleAddRealAsteroid}
-              onAnalyzeImpact={handleAnalyzeImpact}
-              onViewObject={handleViewObject}
-            />
-            {isLoadingNASA && (
-              <div className="absolute top-4 right-4 bg-blue-950/90 text-white px-4 py-2 rounded-lg shadow-lg">
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>Loading NASA data...</span>
-                </div>
-              </div>
-            )}
+      {/* NASA Loading Indicator */}
+      {isLoadingNASA && (
+        <div className="fixed top-24 left-8 z-50 bg-blue-950/90 text-white px-4 py-2 rounded-lg shadow-lg">
+          <div className="flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+            <span>Loading NASA data...</span>
           </div>
         </div>
       )}
