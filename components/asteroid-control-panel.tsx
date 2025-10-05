@@ -126,12 +126,75 @@ export function AsteroidControlPanel({
   const [composition, setComposition] = useState<'rocky' | 'icy' | 'metallic' | 'carbonaceous'>('rocky')
   const [objectColor, setObjectColor] = useState('#FF6B35')
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [isLoadingNASA, setIsLoadingNASA] = useState(false)
+  const [nasaError, setNasaError] = useState<string | null>(null)
 
   const compositionColors = {
     rocky: '#FF6B35',
     icy: '#3498DB',
     metallic: '#95A5A6',
     carbonaceous: '#2C3E50'
+  }
+
+  // Calculate risk level based on orbital parameters
+  const calculateRiskLevel = (obj: CelestialBody): {
+    level: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
+    color: string
+    bgColor: string
+    reasons: string[]
+  } => {
+    const reasons: string[] = []
+    let score = 0
+
+    const a = obj.orbitalElements.semiMajorAxis
+    const e = obj.orbitalElements.eccentricity
+
+    // Check if Near-Earth Object (< 1.3 AU)
+    if (a < 1.3) {
+      score += 3
+      reasons.push('Near-Earth orbit')
+    }
+
+    // Check eccentricity (high = crosses Earth's orbit)
+    if (e > 0.5) {
+      score += 2
+      reasons.push('Highly eccentric orbit')
+    }
+
+    // Check if orbit crosses Earth's (around 1.0 AU)
+    const perihelion = a * (1 - e) // Closest point to Sun
+    const aphelion = a * (1 + e)   // Farthest point from Sun
+    
+    if (perihelion < 1.05 && aphelion > 0.95) {
+      score += 4
+      reasons.push('Crosses Earth\'s orbit')
+    }
+
+    // Check size (larger = more dangerous)
+    if (obj.radius > 100) {
+      score += 2
+      reasons.push('Large size (>100 km)')
+    } else if (obj.radius > 10) {
+      score += 1
+      reasons.push('Significant size (>10 km)')
+    }
+
+    // Check inclination (low = same plane as Earth)
+    if (obj.orbitalElements.inclination < 10) {
+      score += 1
+      reasons.push('Low inclination')
+    }
+
+    // Determine risk level
+    if (score >= 7) {
+      return { level: 'EXTREME', color: '#ff0000', bgColor: 'bg-red-500/20', reasons }
+    } else if (score >= 5) {
+      return { level: 'HIGH', color: '#ff6600', bgColor: 'bg-orange-500/20', reasons }
+    } else if (score >= 3) {
+      return { level: 'MODERATE', color: '#ffaa00', bgColor: 'bg-yellow-500/20', reasons }
+    } else {
+      return { level: 'LOW', color: '#00ff00', bgColor: 'bg-green-500/20', reasons }
+    }
   }
 
   const handleAddRandomAsteroid = () => {
@@ -248,6 +311,50 @@ export function AsteroidControlPanel({
     }
 
     onAddCustomObject(newObject)
+  }
+
+  // NEW: Fetch real asteroid from NASA API (backend)
+  const handleAddNASAAsteroid = async (presetKey: string) => {
+    if (!onAddCustomObject) return
+    
+    setIsLoadingNASA(true)
+    setNasaError(null)
+
+    try {
+      console.log('🛰️ Calling backend API for NASA asteroid:', presetKey)
+      
+      const response = await fetch(`/api/nasa/asteroids?preset=${presetKey}`)
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} ${response.statusText}`)
+      }
+
+      const celestialBody: CelestialBody = await response.json()
+      
+      console.log('✅ Received NASA asteroid data:', celestialBody)
+      
+      // Add the real NASA asteroid to the solar system
+      onAddCustomObject(celestialBody)
+      
+      alert(
+        `✅ Added NASA Asteroid: ${celestialBody.name}!\n\n` +
+        `🛰️ Real orbital data from NASA Horizons\n` +
+        `Distance: ${celestialBody.orbitalElements.semiMajorAxis.toFixed(2)} AU\n` +
+        `Eccentricity: ${celestialBody.orbitalElements.eccentricity.toFixed(3)}\n` +
+        `Inclination: ${celestialBody.orbitalElements.inclination.toFixed(1)}°`
+      )
+    } catch (error) {
+      console.error('❌ Failed to fetch NASA asteroid:', error)
+      setNasaError(error instanceof Error ? error.message : 'Unknown error')
+      alert('⚠️ Failed to fetch NASA data. Using fallback orbital data.')
+      
+      // Fallback: Still add the asteroid with approximate data
+      if (onAddRealAsteroid) {
+        onAddRealAsteroid(presetKey)
+      }
+    } finally {
+      setIsLoadingNASA(false)
+    }
   }
 
   return (
@@ -607,22 +714,42 @@ export function AsteroidControlPanel({
               <div className="p-2 bg-blue-950/40 border border-blue-500/30 rounded">
                 <p className="text-xs text-blue-200 flex items-start gap-1">
                   <Database className="w-3 h-3 mt-0.5" />
-                  Real asteroids from NASA Horizons API
+                  Real asteroids from NASA Horizons API (backend)
                 </p>
               </div>
+
+              {nasaError && (
+                <div className="p-2 bg-red-950/40 border border-red-500/30 rounded">
+                  <p className="text-xs text-red-300">⚠️ {nasaError}</p>
+                </div>
+              )}
+
+              {isLoadingNASA && (
+                <div className="p-3 bg-purple-950/40 border border-purple-500/30 rounded text-center">
+                  <div className="text-sm text-purple-200 animate-pulse">
+                    🛰️ Fetching NASA data...
+                  </div>
+                </div>
+              )}
 
               {Object.entries(ASTEROID_PRESETS).map(([key, preset]) => (
                 <Button
                   key={key}
-                  onClick={() => onAddRealAsteroid && onAddRealAsteroid(key)}
+                  onClick={() => handleAddNASAAsteroid(key)}
+                  disabled={isLoadingNASA}
                   variant="outline"
                   size="sm"
-                  className="w-full justify-start bg-black/40 border-blue-500/30 hover:bg-blue-500/20"
+                  className="w-full justify-start bg-black/40 border-blue-500/30 hover:bg-blue-500/20 disabled:opacity-50"
                 >
                   <div className="text-left flex-1">
                     <div className="text-xs font-semibold text-white">{preset.name}</div>
                     <div className="text-xs text-blue-300/70">{preset.description}</div>
                   </div>
+                  {isLoadingNASA ? (
+                    <div className="text-xs text-blue-400">⏳</div>
+                  ) : (
+                    <div className="text-xs text-green-400">🛰️</div>
+                  )}
                 </Button>
               ))}
             </TabsContent>
@@ -666,14 +793,17 @@ export function AsteroidControlPanel({
                     <div className="text-xs text-purple-300/70 font-semibold">
                       Custom Orbital Objects ({customObjects.length})
                     </div>
-                    {customObjects.map((obj) => (
+                    {customObjects.map((obj) => {
+                      const risk = calculateRiskLevel(obj)
+                      
+                      return (
                       <Card
                         key={obj.id}
                         className="p-3 bg-black/60 border-purple-500/20 hover:border-purple-500/50 transition-colors"
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <div
                                 className="w-3 h-3 rounded-full"
                                 style={{ backgroundColor: obj.color }}
@@ -684,6 +814,16 @@ export function AsteroidControlPanel({
                               <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 capitalize">
                                 {obj.type}
                               </span>
+                              <span 
+                                className={`text-xs px-2 py-0.5 rounded font-semibold ${risk.bgColor} border`}
+                                style={{ 
+                                  color: risk.color,
+                                  borderColor: risk.color + '50'
+                                }}
+                                title={risk.reasons.join(', ')}
+                              >
+                                {risk.level} RISK
+                              </span>
                             </div>
                             
                             <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-purple-200/70">
@@ -692,6 +832,13 @@ export function AsteroidControlPanel({
                               <div>Ecc: {obj.orbitalElements.eccentricity.toFixed(3)}</div>
                               <div>Inc: {obj.orbitalElements.inclination.toFixed(0)}°</div>
                             </div>
+                            
+                            {risk.level !== 'LOW' && risk.reasons.length > 0 && (
+                              <div className="mt-2 text-xs text-yellow-300/70 flex items-start gap-1">
+                                <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                <span>{risk.reasons.join(' • ')}</span>
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex gap-1">
@@ -730,7 +877,7 @@ export function AsteroidControlPanel({
                           </div>
                         </div>
                       </Card>
-                    ))}
+                    )})}
                   </div>
                 )}
 

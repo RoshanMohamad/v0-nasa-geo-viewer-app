@@ -680,7 +680,7 @@ export function SolarSystem({
             // Color based on composition (use object's color if available)
             let color = obj.color ? parseInt(obj.color.replace('#', '0x')) : 0x888888
             let emissive = 0x333333
-            let orbitColor = 0xff6600 // Orange for asteroids
+            let orbitColor = 0xff0000 // RED for custom asteroids (highly visible!)
             
             // Load textures based on object type for realistic appearance
             let material: THREE.MeshStandardMaterial
@@ -689,16 +689,16 @@ export function SolarSystem({
             const hasTextureLoader = textureLoaderRef.current && enhanceTextureRef.current
             
             if (obj.type === 'asteroid') {
-              // Rocky asteroid with moon-like texture + custom color tint
+              // Rocky asteroid with YOUR CUSTOM TEXTURE (esteroids.jpg)
               if (hasTextureLoader) {
-                const asteroidTexture = enhanceTextureRef.current!(textureLoaderRef.current!.load('/textures/2k_moon.jpg'))
+                const asteroidTexture = enhanceTextureRef.current!(textureLoaderRef.current!.load('/textures/esteroids.jpg'))
                 material = new THREE.MeshStandardMaterial({
                   map: asteroidTexture,
                   color: color, // Tint the texture with custom color
                   roughness: 0.95,
                   metalness: obj.composition === 'metallic' ? 0.6 : 0.1,
                   bumpMap: asteroidTexture, // Use same texture for bump mapping
-                  bumpScale: 0.05, // Subtle surface detail
+                  bumpScale: 0.08, // Enhanced surface detail for asteroid texture
                 })
               } else {
                 // Fallback without texture
@@ -709,7 +709,7 @@ export function SolarSystem({
                 })
               }
               emissive = 0xff6600
-              orbitColor = 0xff6600
+              orbitColor = 0xff0000 // RED orbit path for asteroids
             } else if (obj.type === 'comet') {
               // Icy comet with high reflectivity
               if (hasTextureLoader) {
@@ -894,6 +894,10 @@ export function SolarSystem({
             scene.add(orbitLine)
             
             console.log(`✅ Created orbit path for ${obj.name}`)
+            console.log(`  📐 Semi-major axis: ${obj.orbitalElements.semiMajorAxis.toFixed(2)} AU (${a.toFixed(1)} scene units)`)
+            console.log(`  📏 Eccentricity: ${e.toFixed(3)} (0=circle, 1=line)`)
+            console.log(`  📊 Inclination: ${obj.orbitalElements.inclination.toFixed(1)}°`)
+            console.log(`  🎨 Orbit color: ${orbitColor.toString(16)}`)
           }
 
           // Calculate orbital position using Kepler's equations

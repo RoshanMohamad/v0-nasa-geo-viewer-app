@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArrowLeft, AlertTriangle, Target, TrendingUp, Globe, Database } from "lucide-react"
 import { ImpactVisualizationAdvanced } from "@/components/impact-visualization-advanced"
 import { ObjectDetailsPanel } from "@/components/object-details-panel"
+import { OrbitalIntersectionViewer } from "@/components/orbital-intersection-viewer"
+import { SurfaceImpactViewer } from "@/components/surface-impact-viewer"
 import { calculateImpactProbability, type CelestialBody, type ImpactAnalysis } from "@/lib/orbital-mechanics"
 
 export default function ImpactAnalysisPage() {
@@ -16,6 +18,73 @@ export default function ImpactAnalysisPage() {
   const [selectedObject, setSelectedObject] = useState<CelestialBody | null>(null)
   const [analysis, setAnalysis] = useState<ImpactAnalysis | null>(null)
   const [showDetails, setShowDetails] = useState(false)
+  const [riskLevel, setRiskLevel] = useState<{
+    level: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
+    color: string
+    bgColor: string
+    reasons: string[]
+  } | null>(null)
+
+  // Calculate risk level based on orbital parameters
+  const calculateRiskLevel = (obj: CelestialBody): {
+    level: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
+    color: string
+    bgColor: string
+    reasons: string[]
+  } => {
+    const reasons: string[] = []
+    let score = 0
+
+    const a = obj.orbitalElements.semiMajorAxis
+    const e = obj.orbitalElements.eccentricity
+
+    // Check if Near-Earth Object (< 1.3 AU)
+    if (a < 1.3) {
+      score += 3
+      reasons.push('Near-Earth orbit')
+    }
+
+    // Check eccentricity (high = crosses Earth's orbit)
+    if (e > 0.5) {
+      score += 2
+      reasons.push('Highly eccentric orbit')
+    }
+
+    // Check if orbit crosses Earth's (around 1.0 AU)
+    const perihelion = a * (1 - e) // Closest point to Sun
+    const aphelion = a * (1 + e)   // Farthest point from Sun
+    
+    if (perihelion < 1.05 && aphelion > 0.95) {
+      score += 4
+      reasons.push('Crosses Earth\'s orbit')
+    }
+
+    // Check size (larger = more dangerous)
+    if (obj.radius > 100) {
+      score += 2
+      reasons.push('Large size (>100 km)')
+    } else if (obj.radius > 10) {
+      score += 1
+      reasons.push('Significant size (>10 km)')
+    }
+
+    // Check inclination (low = same plane as Earth)
+    if (obj.orbitalElements.inclination < 10) {
+      score += 1
+      reasons.push('Low inclination')
+    }
+
+    // Determine risk level
+    if (score >= 7) {
+      return { level: 'EXTREME', color: '#ff0000', bgColor: 'bg-red-500/20', reasons }
+    } else if (score >= 5) {
+      return { level: 'HIGH', color: '#ff6600', bgColor: 'bg-orange-500/20', reasons }
+    } else if (score >= 3) {
+      return { level: 'MODERATE', color: '#ffaa00', bgColor: 'bg-yellow-500/20', reasons }
+    } else {
+      return { level: 'LOW', color: '#00ff00', bgColor: 'bg-green-500/20', reasons }
+    }
+  }
 
   useEffect(() => {
     // Try to get object data from URL params or localStorage
@@ -24,6 +93,10 @@ export default function ImpactAnalysisPage() {
       try {
         const object: CelestialBody = JSON.parse(decodeURIComponent(objectData))
         setSelectedObject(object)
+        
+        // Calculate risk level
+        const risk = calculateRiskLevel(object)
+        setRiskLevel(risk)
         
         // Calculate impact analysis
         const earthOrbit = {
@@ -61,21 +134,23 @@ export default function ImpactAnalysisPage() {
   }
 
   const getRiskColor = () => {
-    switch (analysis.riskLevel) {
-      case 'Extreme': return 'border-red-600 bg-red-950/30'
-      case 'High': return 'border-orange-600 bg-orange-950/30'
-      case 'Moderate': return 'border-yellow-600 bg-yellow-950/30'
-      case 'Low': return 'border-blue-600 bg-blue-950/30'
+    if (!riskLevel) return 'border-green-600 bg-green-950/30'
+    switch (riskLevel.level) {
+      case 'EXTREME': return 'border-red-600 bg-red-950/30'
+      case 'HIGH': return 'border-orange-600 bg-orange-950/30'
+      case 'MODERATE': return 'border-yellow-600 bg-yellow-950/30'
+      case 'LOW': return 'border-green-600 bg-green-950/30'
       default: return 'border-green-600 bg-green-950/30'
     }
   }
 
   const getRiskTextColor = () => {
-    switch (analysis.riskLevel) {
-      case 'Extreme': return 'text-red-600'
-      case 'High': return 'text-orange-600'
-      case 'Moderate': return 'text-yellow-600'
-      case 'Low': return 'text-blue-600'
+    if (!riskLevel) return 'text-green-600'
+    switch (riskLevel.level) {
+      case 'EXTREME': return 'text-red-600'
+      case 'HIGH': return 'text-orange-600'
+      case 'MODERATE': return 'text-yellow-600'
+      case 'LOW': return 'text-green-600'
       default: return 'text-green-600'
     }
   }
@@ -116,7 +191,7 @@ export default function ImpactAnalysisPage() {
             <div className="flex-1">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-2xl font-bold">
-                  Risk Level: <span className={getRiskTextColor()}>{analysis.riskLevel}</span>
+                  Risk Level: <span className={getRiskTextColor()}>{riskLevel?.level || 'LOW'}</span>
                 </h2>
                 <div className="text-right">
                   <div className="text-sm text-muted-foreground">Impact Probability</div>
@@ -125,6 +200,22 @@ export default function ImpactAnalysisPage() {
                   </div>
                 </div>
               </div>
+              
+              {/* Show risk reasons if HIGH or EXTREME */}
+              {riskLevel && (riskLevel.level === 'HIGH' || riskLevel.level === 'EXTREME') && riskLevel.reasons.length > 0 && (
+                <div className={`mt-3 p-3 rounded-lg ${riskLevel.bgColor} border ${riskLevel.level === 'EXTREME' ? 'border-red-500/50' : 'border-orange-500/50'}`}>
+                  <div className="text-sm font-semibold mb-2">Risk Factors:</div>
+                  <ul className="text-sm space-y-1">
+                    {riskLevel.reasons.map((reason, idx) => (
+                      <li key={idx} className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
               <div className="grid md:grid-cols-3 gap-4 mt-4">
                 <div>
                   <div className="text-sm text-muted-foreground">Classification</div>
@@ -169,29 +260,62 @@ export default function ImpactAnalysisPage() {
           {/* Visualization Tab */}
           <TabsContent value="visualization" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              {/* Embedded visualization components */}
+              {/* Orbital Intersection - Top View */}
               <Card className="p-4">
                 <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <Globe className="w-5 h-5 text-blue-500" />
                   Orbital Intersection - Top View
                 </h3>
-                <div className="aspect-square bg-black/50 rounded-lg">
-                  {/* Top-down view will be rendered here */}
-                  <canvas id="topDownCanvas" className="w-full h-full rounded-lg" />
+                <div className="aspect-square bg-black/50 rounded-lg overflow-hidden">
+                  <OrbitalIntersectionViewer
+                    asteroidOrbit={selectedObject.orbitalElements}
+                    asteroidName={selectedObject.name}
+                    viewType="top"
+                  />
+                </div>
+                <div className="mt-3 text-sm text-muted-foreground">
+                  <p>Red orbit: {selectedObject.name}</p>
+                  <p>Blue orbit: Earth</p>
+                  <p>Yellow markers: Potential intersection points</p>
                 </div>
               </Card>
 
+              {/* Surface Impact - Side View */}
               <Card className="p-4">
                 <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <Target className="w-5 h-5 text-orange-500" />
                   Surface Impact - Side View
                 </h3>
-                <div className="aspect-square bg-black/50 rounded-lg">
-                  {/* Surface view will be rendered here */}
-                  <canvas id="surfaceCanvas" className="w-full h-full rounded-lg" />
+                <div className="aspect-square bg-black/50 rounded-lg overflow-hidden">
+                  <SurfaceImpactViewer
+                    asteroidRadius={selectedObject.radius}
+                    impactVelocity={selectedObject.orbitalElements.velocity || 20}
+                    craterDiameter={analysis.craterDiameter}
+                    craterDepth={analysis.craterDepth}
+                    ejectaRadius={analysis.ejectaRadius}
+                    asteroidName={selectedObject.name}
+                  />
+                </div>
+                <div className="mt-3 text-sm text-muted-foreground">
+                  <p>Crater diameter: {analysis.craterDiameter.toFixed(2)} km</p>
+                  <p>Crater depth: {analysis.craterDepth.toFixed(2)} km</p>
+                  <p>Ejecta radius: {analysis.ejectaRadius.toFixed(2)} km</p>
                 </div>
               </Card>
             </div>
+
+            {/* 3D Impact Visualization */}
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Globe className="w-5 h-5 text-green-500" />
+                3D Impact Scenario
+              </h3>
+              <ImpactVisualizationAdvanced
+                object={selectedObject}
+                analysis={analysis}
+                onClose={() => {}}
+              />
+            </Card>
           </TabsContent>
 
           {/* Statistics Tab */}
