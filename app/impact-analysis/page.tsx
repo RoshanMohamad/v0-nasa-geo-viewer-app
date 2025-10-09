@@ -11,6 +11,8 @@ import { ObjectDetailsPanel } from "@/components/object-details-panel"
 import { OrbitalIntersectionViewer } from "@/components/orbital-intersection-viewer"
 import { SurfaceImpactViewer } from "@/components/surface-impact-viewer"
 import { calculateImpactProbability, type CelestialBody, type ImpactAnalysis } from "@/lib/orbital-mechanics"
+import dynamic from "next/dynamic"
+const ImpactSandbox = dynamic(() => import("@/components/ImpactSandbox"), { ssr: false })
 
 export default function ImpactAnalysisPage() {
   const router = useRouter()
@@ -316,6 +318,11 @@ export default function ImpactAnalysisPage() {
                 onClose={() => {}}
               />
             </Card>
+
+            {/* Interactive Impact Sandbox (map + controls + results) */}
+            <div className="mt-4">
+              <ImpactSandbox />
+            </div>
           </TabsContent>
 
           {/* Statistics Tab */}

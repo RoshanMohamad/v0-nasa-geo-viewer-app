@@ -16,7 +16,10 @@ import { RealisticModeToggle } from "@/components/realistic-mode-toggle"
 import { type ScaleMode, type TimeScale, TIME_SCALES } from "@/lib/realistic-mode"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Rocket, Settings, Info, AlertTriangle, Target, ExternalLink, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose } from "lucide-react"
+import { Rocket, Settings, Info, AlertTriangle, Target, ExternalLink, ChevronLeft, ChevronRight, PanelLeftClose, PanelRightClose, HelpCircle, Sparkles } from "lucide-react"
+import { FeatureHub } from "@/components/FeatureHub"
+import { QuickActionsPanel } from "@/components/QuickActionsPanel"
+import { OnboardingTour } from "@/components/OnboardingTour"
 import { useRouter } from "next/navigation"
 import { calculateImpact, type ImpactResults } from "@/lib/impact-calculator"
 import { calculateImpactProbability, type CelestialBody, type ImpactAnalysis } from "@/lib/orbital-mechanics"
@@ -69,6 +72,10 @@ export default function HomePage() {
   // Realistic Mode State
   const [scaleMode, setScaleMode] = useState<ScaleMode>('visual')
   const [timeScale, setTimeScale] = useState<TimeScale>('veryFast')
+  
+  // UI State
+  const [showFeatureHub, setShowFeatureHub] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Update simulation time based on speed
   useEffect(() => {
@@ -259,6 +266,46 @@ export default function HomePage() {
       setIsImpactVisualizationOpen(true)
     }
   }, [selectedImpactAnalysis])
+  
+  const handleFeatureSelect = useCallback((feature: string) => {
+    setShowFeatureHub(false)
+    
+    // Handle different feature selections
+    switch(feature) {
+      case 'impact-simulator':
+        setIsLeftPanelVisible(true)
+        break
+      case 'map-impact':
+        router.push('/map-impact')
+        break
+      case 'nasa-asteroids':
+        setIsLeftPanelVisible(true)
+        // Auto-focus on Custom tab
+        break
+      case 'realistic-mode':
+        setIsRightPanelVisible(true)
+        break
+      // Add more cases as needed
+    }
+  }, [router])
+  
+  const handleLoadPreset = useCallback((preset: string) => {
+    // Load preset configuration
+    const presets: any = {
+      chelyabinsk: { diameter: 0.02, velocity: 19, angle: 20 },
+      tunguska: { diameter: 0.06, velocity: 15, angle: 30 },
+      barringer: { diameter: 0.05, velocity: 12.8, angle: 45 },
+      chicxulub: { diameter: 10, velocity: 20, angle: 60 },
+      apophis: { diameter: 0.37, velocity: 12.6, angle: 45 }
+    }
+    
+    const config = presets[preset]
+    if (config) {
+      setAsteroidSize(config.diameter)
+      setAsteroidSpeed(config.velocity)
+      setAsteroidAngle(config.angle)
+    }
+  }, [])
 
   const previewImpact = calculateImpact({
     diameter: asteroidSize,
@@ -294,6 +341,22 @@ export default function HomePage() {
               <h1 className="text-2xl font-bold text-foreground">Solar System & Asteroid Impact Simulator</h1>
             </div>
             <nav className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowFeatureHub(true)}
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                All Features
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowOnboarding(true)}
+              >
+                <HelpCircle className="w-4 h-4 mr-2" />
+                Help
+              </Button>
               <Button variant="ghost" size="sm">
                 <Info className="w-4 h-4 mr-2" />
                 About
@@ -338,7 +401,19 @@ export default function HomePage() {
           }`}
         >
           <div className="w-[420px] space-y-4">
-            {/* Asteroid Control Panel */}
+            {/* Quick Actions Panel */}
+            <QuickActionsPanel
+              simulationActive={simulationActive}
+              isPaused={isPaused}
+              onStartSimulation={handleStartSimulation}
+              onPauseToggle={handlePauseToggle}
+              onReset={handleReset}
+              onLoadPreset={handleLoadPreset}
+              onLoadNASA={() => handleAddRealAsteroid('apophis')}
+              onOpenMapImpact={() => router.push('/map-impact')}
+              onToggleFeatureHub={() => setShowFeatureHub(true)}
+              onToggleSettings={() => setIsRightPanelVisible(prev => !prev)}
+            />            {/* Asteroid Control Panel */}
             <AsteroidControlPanel
               customAsteroids={customAsteroids}
               onAddAsteroid={handleAddAsteroid}
@@ -675,6 +750,29 @@ export default function HomePage() {
           }}
         />
       )}
+      
+      {/* Feature Hub Modal */}
+      {showFeatureHub && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-5xl w-full">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 right-4 text-white hover:text-primary"
+              onClick={() => setShowFeatureHub(false)}
+            >
+              ✕
+            </Button>
+            <FeatureHub onFeatureSelect={handleFeatureSelect} />
+          </div>
+        </div>
+      )}
+      
+      {/* Onboarding Tour */}
+      <OnboardingTour
+        onComplete={() => setShowOnboarding(false)}
+        onSkip={() => setShowOnboarding(false)}
+      />
     </div>
   )
 }

@@ -7,6 +7,13 @@
 
 ## ✨ Features
 
+### 🎯 Easy-to-Use Interface (NEW!)
+- **Feature Hub** - Discover all 20+ features in organized categories
+- **Quick Actions Panel** - One-click access to common tasks
+- **Interactive Onboarding** - Step-by-step guided tour for new users
+- **Keyboard Shortcuts** - Power user controls
+- **Comprehensive Documentation** - Detailed user guide included
+
 ### 🎯 Interactive 3D Solar System
 - Real-time planetary orbits with accurate scaling
 - Smooth camera controls and navigation
@@ -85,10 +92,12 @@ pnpm dev
 
 ## 📚 Documentation
 
+- **[Quick Reference Card](QUICK_REFERENCE.md)** - Essential shortcuts and workflows
+- **[Complete User Guide](USER_GUIDE.md)** - Comprehensive manual for all features
+- **[Enhanced UX Summary](ENHANCED_UX_SUMMARY.md)** - New features overview
 - **[Setup Guide](SETUP.md)** - Detailed installation and configuration
 - **[Project Structure](PROJECT_STRUCTURE.md)** - Code organization
 - **[Contributing](CONTRIBUTING.md)** - How to contribute
-- **[Quick Reference](QUICK_REFERENCE.md)** - Command and config reference
 - **[Session Summary](SESSION_SUMMARY.md)** - Recent improvements and fixes
 
 ## 🔧 Recent Fixes
@@ -108,6 +117,18 @@ See [BUGFIX_INFINITE_LOOP.md](BUGFIX_INFINITE_LOOP.md) and [BUGFIX_ZOOM_CONTROLS
 - **API**: NASA NEO Web Service
 
 ## 🎯 Usage
+
+### First-Time Users
+
+1. **Launch & Learn**
+   - Open the app
+   - Complete the interactive onboarding tour
+   - Click "All Features" to explore capabilities
+
+2. **Quick Start Options**
+   - **Historical Impact**: Quick Actions → Presets → Chicxulub
+   - **Real Asteroid**: Quick Actions → NASA Data → Apophis
+   - **Map Impact**: Quick Actions → Map Impact → Click location
 
 ### Running a Simulation
 
